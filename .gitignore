@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local data and model artifacts: never committed (large, and some are
+# licensed for local use only). We regenerate them from code.
+data/
+artifacts/
+
+# OS
+.DS_Store
