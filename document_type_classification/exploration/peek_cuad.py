@@ -1,18 +1,10 @@
 """Peek at real contracts from CUAD.
 
-This is EXPLORATION code: throwaway, meant only to let us see the raw data with
-our own eyes before we build anything. It is not part of the model.
-
 CUAD (Contract Understanding Atticus Dataset) is a public, openly-licensed
 collection of ~500 real commercial contracts. Each row gives us:
-  - `context`: the full text of a contract        <- this is the document
-  - `title`  : the original filename, which names the contract type
-
-We stream a few rows (so we do NOT download the whole dataset) and print them.
-Network required: turn Cloudflare WARP OFF first.
-
-Run:
-    poetry run python document_type_classification/exploration/peek_cuad.py
+  - `context`: the full text of a contract, this is the document
+  - `title`: the original filename, which names the contract type
+  - `question` and `answer`: lawyer-review questions and answers about the contract
 """
 
 from __future__ import annotations
