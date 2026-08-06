@@ -81,18 +81,27 @@ def _load(split: str) -> tuple[list[str], list[str]]:
 def _top_features(pipe: Pipeline, k: int) -> dict[str, list[str]]:
     """The k words pushing hardest toward each class.
 
-    For a 2-class linear model there is a single coefficient vector: the most
-    positive weights favour classes_[1], the most negative favour classes_[0].
+    Logistic regression stores coefficients differently depending on class count:
+      * 2 classes  -> ONE coefficient vector (coef_ shape (1, n_features)); the
+        most positive weights favour classes_[1], the most negative classes_[0].
+      * 3+ classes -> ONE vector PER class (shape (n_classes, n_features)); each
+        class's top words are simply its own largest weights.
+    We handle both, so the readout stays correct as we add classes.
     """
     vec: TfidfVectorizer = pipe.named_steps["tfidf"]
     clf: LogisticRegression = pipe.named_steps["clf"]
     names = np.asarray(vec.get_feature_names_out())
-    coef = clf.coef_[0]
-    order = np.argsort(coef)
-    return {
-        clf.classes_[0]: names[order[:k]].tolist(),  # most negative weights
-        clf.classes_[1]: names[order[-k:][::-1]].tolist(),  # most positive weights
-    }
+    classes = list(clf.classes_)
+    coef = clf.coef_
+
+    if coef.shape[0] == 1:  # binary
+        order = np.argsort(coef[0])
+        return {
+            classes[0]: names[order[:k]].tolist(),         # most negative weights
+            classes[1]: names[order[-k:][::-1]].tolist(),  # most positive weights
+        }
+    # multiclass: one-vs-rest, so each class has its own weight vector
+    return {cls: names[np.argsort(row)[::-1][:k]].tolist() for cls, row in zip(classes, coef)}
 
 
 def _bootstrap_macro_f1(

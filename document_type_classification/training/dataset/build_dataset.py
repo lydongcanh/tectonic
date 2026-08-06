@@ -21,6 +21,7 @@ from dataset import LABELS, Example, write_jsonl
 from fingerprint import NEAR_DUP_THRESHOLD, sketch, similarity
 from sources.contract_nli import load_contract_nli
 from sources.cuad import load_cuad
+from sources.edgar_constitutional import load_edgar_constitutional
 
 OUT_PATH = Path("data/document_type/dataset.jsonl")
 
@@ -36,7 +37,7 @@ def _load_exact_deduped() -> tuple[list[Example], int]:
     examples: list[Example] = []
     seen_text: set[str] = set()
     exact_dropped = 0
-    for load in (load_cuad, load_contract_nli):
+    for load in (load_cuad, load_contract_nli, load_edgar_constitutional):
         for ex in load():
             if ex.type not in LABELS:
                 continue  # a type we are not modelling yet (CUAD's ip / other)
@@ -65,10 +66,30 @@ def _drop_near_duplicates(examples: list[Example]) -> tuple[list[Example], int]:
     return kept, near_dropped
 
 
+MIN_PER_LABEL = 10  # a class below this almost certainly means a source failed
+
+
+def _require_all_labels(examples: list[Example]) -> None:
+    """Fail loudly if any modelled label is missing or barely present.
+
+    Without this, a source that fails to load (e.g. a transient network error)
+    silently drops its whole class and the pipeline still reports success.
+    """
+    counts = Counter(ex.type for ex in examples)
+    bad = [f"{lbl}={counts.get(lbl, 0)}" for lbl in LABELS if counts.get(lbl, 0) < MIN_PER_LABEL]
+    if bad:
+        raise SystemExit(
+            f"FAILED: labels missing or under-populated (< {MIN_PER_LABEL}): "
+            + ", ".join(bad)
+            + ".\nA source probably failed to load. Fix it before continuing."
+        )
+
+
 def build() -> list[Example]:
     examples, exact_dropped = _load_exact_deduped()
     kept, near_dropped = _drop_near_duplicates(examples)
     print(f"dropped {exact_dropped} exact + {near_dropped} near duplicates")
+    _require_all_labels(kept)
     return kept
 
 
