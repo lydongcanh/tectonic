@@ -10,12 +10,19 @@ INSPECTABLE:
     adds the weights of the words present and picks the highest-scoring class.
 
 Because it is linear, we can read off which words drive each prediction (the
-top-words readout below), our check that it learned real document type rather
-than dataset artefacts. Every run's metrics are saved under artifacts/ so we can
-compare across runs after the console is gone.
+top-words readout), our check that it learned real document type rather than
+dataset artefacts.
+
+This lives in `model/` and depends on the data phase only through its OUTPUT
+FILES (`data/document_type/train.jsonl` and `test.jsonl`), not its code. The two
+phases share a file format, not imports, which keeps them cleanly separate.
+
+Outputs, all under artifacts/ so they survive the console:
+  - the trained pipeline, saved as <run>.model.joblib (the actual usable model),
+  - full metrics as <run>.json, and a one-line summary appended to runs.jsonl.
 
 Run from the repo root:
-    poetry run python document_type_classification/training/baseline.py
+    poetry run python document_type_classification/training/model/baseline.py
 """
 
 from __future__ import annotations
@@ -24,13 +31,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import joblib
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 from sklearn.pipeline import Pipeline
-
-from dataset import read_jsonl
 
 DATA_DIR = Path("data/document_type")
 ARTIFACT_DIR = Path("artifacts/document_type")
@@ -52,8 +58,21 @@ def _build_pipeline() -> Pipeline:
 
 
 def _load(split: str) -> tuple[list[str], list[str]]:
-    rows = read_jsonl(DATA_DIR / f"{split}.jsonl")
-    return [r.text for r in rows], [r.type for r in rows]
+    """Read the data phase's JSONL output into (texts, labels).
+
+    We read the file directly rather than import the data-prep code: the model
+    depends on the dataset FORMAT, not on how it was built.
+    """
+    path = DATA_DIR / f"{split}.jsonl"
+    texts: list[str] = []
+    labels: list[str] = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        texts.append(row["text"])
+        labels.append(row["type"])
+    return texts, labels
 
 
 def _top_features(pipe: Pipeline, k: int) -> dict[str, list[str]]:
@@ -79,7 +98,7 @@ def evaluate(
     x_test: list[str], y_test: list[str],
     labels: list[str],
 ) -> dict:
-    """Train, evaluate, print, and save one run's metrics. Returns the metrics."""
+    """Train, evaluate, print, and save one run (model + metrics). Returns metrics."""
     pipe = _build_pipeline()
     pipe.fit(x_train, y_train)
     preds = pipe.predict(x_test)
@@ -111,13 +130,14 @@ def evaluate(
         "confusion_matrix": matrix,
         "top_features": features,
     }
-    _save(name, metrics)
+    _save(name, metrics, pipe)
     return metrics
 
 
-def _save(name: str, metrics: dict) -> None:
-    """Write the full run to <name>.json and append a summary to runs.jsonl."""
+def _save(name: str, metrics: dict, pipe: Pipeline) -> None:
+    """Save the trained model, the full metrics, and a summary line."""
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipe, ARTIFACT_DIR / f"{name}.model.joblib")
     (ARTIFACT_DIR / f"{name}.json").write_text(json.dumps(metrics, indent=2))
     summary = {"run": name, "timestamp": metrics["timestamp"],
                "macro_f1": metrics["macro_f1"], "n_test": metrics["n_test"]}
@@ -132,7 +152,7 @@ def main() -> None:
     print(f"train={len(x_train)}  test={len(x_test)}")
 
     evaluate("baseline", x_train, y_train, x_test, y_test, labels)
-    print(f"\nsaved to {ARTIFACT_DIR}/ (per-run JSON + runs.jsonl history)")
+    print(f"\nsaved model + metrics to {ARTIFACT_DIR}/")
 
 
 if __name__ == "__main__":

@@ -10,9 +10,6 @@ Steps:
 Step 4 exists because the split audit found near-identical NDA templates leaking
 across train and test. Removing near-dups here fixes it at the source and keeps
 the split logic simple.
-
-Run from the repo root:
-    poetry run python document_type_classification/training/build_dataset.py
 """
 
 from __future__ import annotations

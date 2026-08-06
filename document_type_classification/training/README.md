@@ -1,14 +1,23 @@
 # training
 
-The real, kept code for the document-type classifier. Two phases live here: first
-preparing a clean dataset, then (next) training and measuring a model on it.
+The real, kept code for the document-type classifier, in two phases:
 
-## Data preparation
+```
+training/
+  dataset/  prepare a clean dataset (sources -> dedupe -> split -> audit)
+  model/    train and evaluate a model on that dataset
+```
 
-The pipeline is three ordered stages. Run them all with one command:
+The two phases are separated on purpose. `dataset/` writes data files; `model/`
+reads those files. They share a **file format** (`train.jsonl` / `test.jsonl`),
+not code, so neither imports the other.
+
+## dataset/ — prepare the data
+
+Three ordered stages. Run them all with one command:
 
 ```bash
-poetry run python document_type_classification/training/prepare.py
+poetry run python document_type_classification/training/dataset/prepare.py
 ```
 
 That runs, in order:
@@ -22,7 +31,7 @@ That runs, in order:
 
 You can also run any stage on its own while iterating.
 
-### Supporting modules (not run directly)
+Supporting modules (not run directly):
 
 - **dataset.py** — the `Example` row shape (`doc_id`, `source`, `type`, `text`),
   the `LABELS` we currently model, and JSONL read/write.
@@ -31,10 +40,24 @@ You can also run any stage on its own while iterating.
 - **sources/** — one loader per data source (`cuad.py`, `contract_nli.py`). Each
   maps its raw dataset onto `Example`s. Adding a new type = add a file here.
 
-Output lands in `data/` (gitignored): we never commit the documents, only the
-code that regenerates them.
+## model/ — train and evaluate
 
-## Model (coming next)
+```bash
+poetry run python document_type_classification/training/model/baseline.py
+```
 
-Training and evaluation code. When these files arrive we will split this folder
-into `data/` and `model/` subfolders; today it is small enough to stay flat.
+- **baseline.py** — TF-IDF + Logistic Regression. Reads the data files, prints
+  macro-F1 / per-class / confusion matrix / top words, and saves the trained model
+  plus metrics.
+
+## Outputs
+
+Everything generated lands in gitignored folders at the repo root, never committed
+(this is why the source folder is `dataset/`, not `data/`: a `data/` folder would
+be caught by the `data/` ignore rule):
+
+- `data/document_type/` — the data files (`dataset.jsonl`, `train.jsonl`, `test.jsonl`).
+- `artifacts/document_type/` — the trained model (`*.model.joblib`), per-run metrics
+  (`*.json`), and a `runs.jsonl` history for comparing runs over time.
+
+All commands are run from the repo root.

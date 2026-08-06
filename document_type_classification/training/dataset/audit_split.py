@@ -10,9 +10,6 @@ near-misses for visibility. This audit only reports; it deletes nothing.
 
 After build_dataset.py drops near-duplicates at the source, this should report
 zero leaks.
-
-Run from the repo root:
-    poetry run python document_type_classification/training/audit_split.py
 """
 
 from __future__ import annotations
