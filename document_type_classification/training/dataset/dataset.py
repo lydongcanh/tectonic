@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # The document types this dataset currently covers. It grows as we add sources.
-LABELS = ("commercial_agreement", "nda", "constitutional")
+LABELS = ("commercial_agreement", "nda", "constitutional", "financial_statements")
 
 
 @dataclass(frozen=True)
@@ -26,8 +26,8 @@ class Example:
 
     doc_id: str  # stable id within its source (its file name / title)
     source: str  # which dataset it came from: "cuad", "contract_nli", ...
-    type: str    # the document-type label; one of LABELS
-    text: str    # the full document text (the model's input)
+    type: str  # the document-type label; one of LABELS
+    text: str  # the full document text (the model's input)
 
 
 def write_jsonl(examples: list[Example], path: Path) -> None:

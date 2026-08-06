@@ -14,7 +14,9 @@ the split logic simple.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from dataset import LABELS, Example, write_jsonl
@@ -22,6 +24,7 @@ from fingerprint import NEAR_DUP_THRESHOLD, sketch, similarity
 from sources.contract_nli import load_contract_nli
 from sources.cuad import load_cuad
 from sources.edgar_constitutional import load_edgar_constitutional
+from sources.edgar_financial_statements import load_edgar_financial_statements
 
 OUT_PATH = Path("data/document_type/dataset.jsonl")
 
@@ -32,15 +35,33 @@ def _normalise(text: str) -> str:
     return " ".join(text.split()).lower()
 
 
+# SEC filing wrappers that say WHERE a document was filed, not WHAT it is:
+# exhibit labels ("Exhibit 10.16", "EX-3.1") and source filenames ("dex31.htm").
+_EXHIBIT_LABEL = re.compile(r"\b(?:ex|exhibit)[\s-]*\d+(?:\.\d+)*(?:\([a-z0-9]+\))?\b", re.I)
+_SOURCE_FILENAME = re.compile(r"\b\S+\.(?:htm|html|txt)\b", re.I)
+
+
+def _strip_filing_boilerplate(text: str) -> str:
+    """Remove SEC filing wrappers so the model keys on content, not on artifacts of
+    our sources. Real dataroom documents won't carry "Exhibit 10", so letting the
+    model learn it would hurt real-world generalisation. We remove only these
+    wrappers, never real content like dates or "30 days"."""
+    text = _EXHIBIT_LABEL.sub(" ", text)
+    text = _SOURCE_FILENAME.sub(" ", text)
+    return " ".join(text.split())
+
+
 def _load_exact_deduped() -> tuple[list[Example], int]:
     """All in-scope Examples with byte-identical (normalised) duplicates removed."""
     examples: list[Example] = []
     seen_text: set[str] = set()
     exact_dropped = 0
-    for load in (load_cuad, load_contract_nli, load_edgar_constitutional):
+    for load in (load_cuad, load_contract_nli, load_edgar_constitutional,
+                 load_edgar_financial_statements):
         for ex in load():
             if ex.type not in LABELS:
                 continue  # a type we are not modelling yet (CUAD's ip / other)
+            ex = replace(ex, text=_strip_filing_boilerplate(ex.text))
             key = _normalise(ex.text)
             if key in seen_text:
                 exact_dropped += 1
