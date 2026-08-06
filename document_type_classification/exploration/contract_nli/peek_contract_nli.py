@@ -7,11 +7,8 @@ we only care about two things: the full text, and that every document is an `nda
 So we dedupe by document and treat each distinct one as a single NDA.
 
 Dataset: reuben256/contract-nli (a script-free mirror of Stanford's ContractNLI).
-The original ContractNLI is licensed CC BY 4.0; we must confirm this mirror carries
+The original ContractNLI is licensed CC BY 4.0, we must confirm this mirror carries
 the same licence before using it to train anything.
-
-Run:
-    poetry run python document_type_classification/exploration/contract_nli/peek_contract_nli.py
 """
 
 from __future__ import annotations
@@ -38,7 +35,7 @@ def main() -> None:
             doc_id = row.get("document_id") or row.get("file_name")
             if doc_id in seen_docs:
                 continue
-            
+
             seen_docs.add(doc_id)
 
             if shown < HOW_MANY:
