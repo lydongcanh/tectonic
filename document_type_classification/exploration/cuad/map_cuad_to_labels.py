@@ -13,9 +13,6 @@ we failed to parse into a clean type are still commercial contracts underneath.
 
 The output tells us how many REAL examples CUAD can give each of our labels,
 which is what decides where real evaluation is even possible.
-
-Run:
-    poetry run python document_type_classification/exploration/map_cuad_to_labels.py
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ from collections import Counter, defaultdict
 from datasets import load_dataset
 
 # Reuse the (throwaway) extractor from the sibling script instead of copying it.
-from count_cuad_types import CUAD_ID, contract_type
+from document_type_classification.exploration.cuad.count_cuad_types import CUAD_ID, contract_type
 
 # The only CUAD types we pull OUT of the commercial default, each keyed to the
 # label it belongs to in our taxonomy. This mapping is a judgment call, so it is

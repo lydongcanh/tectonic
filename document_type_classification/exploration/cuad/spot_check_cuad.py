@@ -8,9 +8,6 @@ them. Garbage labels in, garbage model out.
 
 We deliberately over-sample the rarer IP and "other" buckets, because that is
 where the title-based mapping is most likely to be wrong.
-
-Run:
-    poetry run python document_type_classification/exploration/spot_check_cuad.py
 """
 
 from __future__ import annotations
@@ -19,8 +16,8 @@ from collections import defaultdict
 
 from datasets import load_dataset
 
-from count_cuad_types import CUAD_ID, contract_type
-from map_cuad_to_labels import our_label
+from document_type_classification.exploration.cuad.count_cuad_types import CUAD_ID, contract_type
+from document_type_classification.exploration.cuad.map_cuad_to_labels import our_label
 
 # How many examples to pull for each of our labels.
 CAPS = {"commercial_agreement": 6, "ip_agreement": 4, "other": 2}
