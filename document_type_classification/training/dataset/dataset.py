@@ -13,7 +13,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # The document types this dataset currently covers. It grows as we add sources.
-LABELS = ("commercial_agreement", "nda", "constitutional", "financial_statements", "ip_agreement")
+LABELS = ("commercial_agreement", "nda", "constitutional", "financial_statements",
+          "ip_agreement", "employment_agreement")
 
 
 @dataclass(frozen=True)

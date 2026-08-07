@@ -70,6 +70,42 @@ def _search(query: str, offset: int, forms: str | None) -> list[dict]:
         return []
 
 
+# Titles that describe a document ABOUT an agreement rather than the agreement
+# itself, for cases the preposition rule in `title_says` does not reach.
+_NOT_FULL_KEYWORDS = (
+    "AMENDMENT", "AMENDS", "CONSENT", "ASSIGNMENT",
+    "TERMINATION", "WAIVER", "SUPPLEMENT", "NOTICE",
+)
+
+
+def title_says(agreement: str) -> Callable[[str], bool]:
+    """Build a `description_ok` predicate that keeps only FULL agreements of a kind.
+
+    EDGAR has no dedicated exhibit type for licence / employment / lease agreements
+    (all are EX-10 material contracts), so we label by the filer's own exhibit title
+    in `file_description`. We keep a document only if its title names the agreement
+    (e.g. "EMPLOYMENT AGREEMENT") and is not a sub-document that merely modifies one.
+
+    A sub-document names the agreement AFTER a preposition: "AMENDMENT TO <A>",
+    "ASSIGNMENT OF <A>", "CONSENT TO THE <A>". Keying on that structure catches
+    modifier words we did not enumerate and their abbreviations (a real example the
+    scout caught: "AMENDS. TO EMPLOYMENT AGREEMENT ..."). "AMENDED AND RESTATED <A>"
+    is kept: it is the full, current text, not a modifying document.
+    """
+    agreement = agreement.upper()
+    modifies = re.compile(r"\b(?:TO|OF)\s+(?:THE\s+)?" + re.escape(agreement))
+
+    def ok(description: str) -> bool:
+        d = description.upper()
+        if agreement not in d:
+            return False
+        if modifies.search(d):
+            return False
+        return not any(k in d for k in _NOT_FULL_KEYWORDS)
+
+    return ok
+
+
 def _hit_to_entry(
     hit: dict,
     exhibit_prefix: str,
@@ -103,6 +139,7 @@ def _hit_to_entry(
         "filename": filename,
         "cik": company,
         "file_type": source.get("file_type"),
+        "file_description": source.get("file_description"),  # kept so labels stay auditable
         "filer": source.get("display_names", ["?"])[0],
     }
 

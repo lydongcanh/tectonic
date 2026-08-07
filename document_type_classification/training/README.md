@@ -37,8 +37,21 @@ Supporting modules (not run directly):
   the `LABELS` we currently model, and JSONL read/write.
 - **fingerprint.py** — the near-duplicate sketch, shared by build (to remove
   near-dups) and audit (to check they are gone), so both agree on "near-duplicate".
-- **sources/** — one loader per data source (`cuad.py`, `contract_nli.py`). Each
-  maps its raw dataset onto `Example`s. Adding a new type = add a file here.
+- **sources/** — one loader per data source, each mapping its raw data onto
+  `Example`s:
+  - `cuad.py` — CUAD contracts (commercial_agreement, and some ip_agreement).
+  - `contract_nli.py` — ContractNLI NDAs.
+  - `edgar.py` — shared SEC EDGAR helper: search, per-type caching, a frozen
+    manifest, and the junk-page guards. Two ways to label an EDGAR exhibit:
+    by its **exhibit type** when a dedicated one exists (EX-3 = constitutional,
+    EX-13 = financials), or by the filer's own **`file_description` title** when
+    it does not (licences and employment agreements are both EX-10 "material
+    contracts", so `title_says("...")` keeps only full agreements of that name).
+  - `edgar_constitutional.py`, `edgar_financial_statements.py`, `edgar_ip.py`,
+    `edgar_employment.py` — thin wrappers, one per EDGAR-sourced type.
+
+  Adding a type = add a loader here, add the label to `LABELS`, and register the
+  loader in `build_dataset.py`.
 
 ## model/ — train and evaluate
 
@@ -49,6 +62,18 @@ poetry run python document_type_classification/training/model/baseline.py
 - **baseline.py** — TF-IDF + Logistic Regression. Reads the data files, prints
   macro-F1 / per-class / confusion matrix / top words, and saves the trained model
   plus metrics.
+- **inspect_features.py** — on-demand deep look at a trained class's learned
+  words, for auditing bias the routine top-15 log is too shallow to show. E.g.
+  `inspect_features.py ip_agreement --top 40` or `--grep beijing` (shows every
+  feature containing a suspected word, with its weight and rank).
+
+## Current status
+
+Six classes, macro-F1 ≈ 0.96 (held-out test, with a bootstrap confidence
+interval): `commercial_agreement`, `nda`, `constitutional`, `financial_statements`,
+`ip_agreement`, `employment_agreement`. The only meaningful confusion left is
+ip ↔ commercial, which is genuine (a licence is a kind of commercial contract),
+not a data artefact.
 
 ## Outputs
 

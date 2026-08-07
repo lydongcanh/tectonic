@@ -74,7 +74,7 @@ Four-lens assessment (honest, including the weak spots):
 | constitutional | strong (EDGAR EX-3) | strong | strong (approval rights) | strong (its OWN clause taxonomy) | solid |
 | lease_agreement | moderate (EDGAR, thinner) | strong | strong (lease-expiry analytics) | strong (rent, term, break) | keep; watch data volume |
 | commercial_agreement | strong (CUAD ~454) | moderate (umbrella) | moderate (catch-all contract) | moderate (one loose schema) | the residual contract bucket |
-| ip_agreement | thin (CUAD ~44) | moderate (overlaps commercial) | good (IP counsel) | strong (licence scope, royalties, ownership) | fuzzy vs commercial; thin data |
+| ip_agreement | good (CUAD + EDGAR EX-10 licences) | moderate (overlaps commercial) | good (IP counsel) | strong (licence scope, royalties, ownership) | fuzzy vs commercial (the one real confusion); data no longer thin |
 
 ## Known limits (write them down, don't be surprised later)
 
@@ -116,9 +116,23 @@ test *yet* or need a different mechanism.
   meaning of `other` shifts each version as former-`other` documents become real
   classes.
 
-## Current build target
+## Current status
 
-**v1: a 2-class model, `commercial_agreement` vs `ip_agreement`, trained and
-evaluated on real CUAD with a grouped train/test split (no leakage).** This is
-deliberately the *fuzziest* boundary in the tier: if it is learnable from real
-data, the crisper boundaries are easier; if it is not, we learn that cheaply.
+Six of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
+
+```
+BUILT:   commercial_agreement, nda, constitutional,
+         financial_statements, ip_agreement, employment_agreement
+PENDING: acquisition_agreement, financing_agreement, lease_agreement
+```
+
+We started from the *fuzziest* boundary on purpose (commercial vs ip): if that is
+learnable from real data, the crisper ones are easier. It was, and the crisper
+classes (constitutional, financial_statements, employment) score ~1.0. The only
+meaningful confusion left is ip ↔ commercial, which is genuine, not an artefact.
+
+How each is labelled honestly: CUAD/ContractNLI carry their own type; EDGAR types
+use the exhibit type where one is authoritative (EX-3 constitutional, EX-13
+financials) and otherwise the filer's own exhibit title (EX-10 licences and
+employment agreements). The three pending types are all EDGAR EX-2 / EX-4 / EX-10
+and slot into the same machinery.
