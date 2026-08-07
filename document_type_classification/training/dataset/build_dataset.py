@@ -27,6 +27,7 @@ from sources.edgar_acquisition import load_edgar_acquisition
 from sources.edgar_constitutional import load_edgar_constitutional
 from sources.edgar_employment import load_edgar_employment
 from sources.edgar_financial_statements import load_edgar_financial_statements
+from sources.edgar_financing import load_edgar_financing
 from sources.edgar_ip import load_edgar_ip
 from sources.edgar_lease import load_edgar_lease
 
@@ -66,7 +67,8 @@ def _load_exact_deduped() -> tuple[list[Example], int]:
     exact_dropped = 0
     for load in (load_cuad, load_contract_nli, load_edgar_constitutional,
                  load_edgar_financial_statements, load_edgar_ip,
-                 load_edgar_employment, load_edgar_lease, load_edgar_acquisition):
+                 load_edgar_employment, load_edgar_lease, load_edgar_acquisition,
+                 load_edgar_financing):
         for ex in load():
             if ex.type not in LABELS:
                 continue  # a type we are not modelling yet (CUAD's ip / other)

@@ -48,9 +48,9 @@ Supporting modules (not run directly):
     it does not (licences and employment agreements are both EX-10 "material
     contracts", so `title_says("...")` keeps only full agreements of that name).
   - `edgar_constitutional.py`, `edgar_financial_statements.py`,
-    `edgar_acquisition.py` (EX-2, labelled by exhibit type), `edgar_ip.py`,
-    `edgar_employment.py`, `edgar_lease.py` (EX-10, labelled by title) — thin
-    wrappers, one per EDGAR type.
+    `edgar_acquisition.py` and `edgar_financing.py` (EX-2 / EX-4, labelled by
+    exhibit type), `edgar_ip.py`, `edgar_employment.py`, `edgar_lease.py` (EX-10,
+    labelled by the filer's title) — thin wrappers, one per EDGAR type.
 
   Adding a type = add a loader here, add the label to `LABELS`, and register the
   loader in `build_dataset.py`.
@@ -75,12 +75,17 @@ poetry run python document_type_classification/training/model/baseline.py
 
 ## Current status
 
-Eight classes, macro-F1 ≈ 0.96 (held-out test, with a bootstrap confidence
-interval): `commercial_agreement`, `nda`, `constitutional`, `financial_statements`,
-`ip_agreement`, `employment_agreement`, `lease_agreement`, `acquisition_agreement`.
-The remaining confusion is concentrated at the edges of `commercial_agreement`, the
-residual "contract that is not one of the specific ones" bucket, which genuinely
-overlaps with ip / lease / acquisition. Not a data artefact.
+All nine v1 classes are built, macro-F1 ≈ 0.96 (held-out test, with a bootstrap
+confidence interval): `commercial_agreement`, `nda`, `constitutional`,
+`financial_statements`, `ip_agreement`, `employment_agreement`, `lease_agreement`,
+`acquisition_agreement`, `financing_agreement`. The remaining confusion is
+concentrated at the edges of `commercial_agreement`, the residual "contract that is
+not one of the specific ones" bucket, which genuinely overlaps with the specific
+contract types. Not a data artefact.
+
+The honest next milestone is an out-of-source evaluation: every class is currently
+sourced from essentially one origin, so the scores are in-distribution. Feeding
+documents from a different source is what would show whether they generalise.
 
 ## Outputs
 

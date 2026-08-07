@@ -70,7 +70,7 @@ Four-lens assessment (honest, including the weak spots):
 | financial_statements | strong (EDGAR 10-K) | strong *if tables survive to markdown* | strong (finance) | strong (numbers, not clauses) | solid; depends on table parsing |
 | nda | good (ContractNLI) | strong | strong (gates room access) | strong (term, purpose, carve-outs) | solid |
 | employment_agreement | strong (EDGAR EX-10) | strong | strong (comp exposure) | strong (comp, change-of-control) | solid |
-| financing_agreement | strong (EDGAR EX-10/EX-4) | strong | strong (debt workstream) | strong (covenants, events of default) | solid; internally broad |
+| financing_agreement | strong (EDGAR EX-4 debt) | strong | strong (debt workstream) | strong (covenants, events of default) | built; scoped to debt (indenture/notes/trustee), F1 0.98; credit agreements deferred |
 | constitutional | strong (EDGAR EX-3) | strong | strong (approval rights) | strong (its OWN clause taxonomy) | solid |
 | lease_agreement | good (EDGAR EX-10, ~120) | strong | strong (lease-expiry analytics) | strong (rent, term, break) | built; crisp (lessor/lessee/rent/premises), F1 0.96 |
 | commercial_agreement | strong (CUAD ~454) | moderate (umbrella) | moderate (catch-all contract) | moderate (one loose schema) | the residual contract bucket |
@@ -118,13 +118,19 @@ test *yet* or need a different mechanism.
 
 ## Current status
 
-Eight of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
+All nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
 
 ```
-BUILT:   commercial_agreement, nda, constitutional, financial_statements,
-         ip_agreement, employment_agreement, lease_agreement, acquisition_agreement
-PENDING: financing_agreement
+BUILT (v1 complete):
+  commercial_agreement, nda, constitutional, financial_statements, ip_agreement,
+  employment_agreement, lease_agreement, acquisition_agreement, financing_agreement
 ```
+
+`financing_agreement` is scoped to DEBT instruments (indentures, notes, debentures
+from EX-4, an authoritative exhibit type). Bank credit/loan agreements (EX-10) were
+deliberately left out: EX-10 is a generic bucket with mostly blank titles, so the
+only way to label them would be matching "credit agreement" in the body, the
+circular selection we avoid. They can be revisited if a cleaner label appears.
 
 We started from the *fuzziest* boundary on purpose (commercial vs ip): if that is
 learnable from real data, the crisper ones are easier. It was, and the crisper

@@ -106,7 +106,7 @@ def title_says(agreement: str) -> Callable[[str], bool]:
     return ok
 
 
-def title_not_modification() -> Callable[[str], bool]:
+def title_not_modification(keywords: tuple[str, ...] = _NOT_FULL_KEYWORDS) -> Callable[[str], bool]:
     """A `description_ok` predicate for sources whose EXHIBIT TYPE is already the
     authoritative label (e.g. EX-2 = acquisition / merger agreements), used only to
     drop sub-documents.
@@ -116,10 +116,15 @@ def title_not_modification() -> Callable[[str], bool]:
     would throw most of them away. We keep everything except descriptions that name
     a modification (amendment, addendum, ...). "AMENDED AND RESTATED ..." is still
     kept: that is the adjective, the full current text, not a modifying document.
+
+    `keywords` lets a caller override which titles count as a modification. Financing
+    passes a set WITHOUT "SUPPLEMENT", because a supplemental indenture is a full,
+    substantive debt document (it establishes a new note series with its own
+    covenants), not a throwaway amendment.
     """
     def ok(description: str) -> bool:
         d = description.upper()
-        return not any(k in d for k in _NOT_FULL_KEYWORDS)
+        return not any(k in d for k in keywords)
 
     return ok
 
