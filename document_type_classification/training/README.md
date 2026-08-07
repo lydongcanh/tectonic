@@ -47,8 +47,10 @@ Supporting modules (not run directly):
     EX-13 = financials), or by the filer's own **`file_description` title** when
     it does not (licences and employment agreements are both EX-10 "material
     contracts", so `title_says("...")` keeps only full agreements of that name).
-  - `edgar_constitutional.py`, `edgar_financial_statements.py`, `edgar_ip.py`,
-    `edgar_employment.py`, `edgar_lease.py` — thin wrappers, one per EDGAR type.
+  - `edgar_constitutional.py`, `edgar_financial_statements.py`,
+    `edgar_acquisition.py` (EX-2, labelled by exhibit type), `edgar_ip.py`,
+    `edgar_employment.py`, `edgar_lease.py` (EX-10, labelled by title) — thin
+    wrappers, one per EDGAR type.
 
   Adding a type = add a loader here, add the label to `LABELS`, and register the
   loader in `build_dataset.py`.
@@ -73,11 +75,12 @@ poetry run python document_type_classification/training/model/baseline.py
 
 ## Current status
 
-Seven classes, macro-F1 ≈ 0.96 (held-out test, with a bootstrap confidence
+Eight classes, macro-F1 ≈ 0.96 (held-out test, with a bootstrap confidence
 interval): `commercial_agreement`, `nda`, `constitutional`, `financial_statements`,
-`ip_agreement`, `employment_agreement`, `lease_agreement`. The only meaningful
-confusion left is ip ↔ commercial, which is genuine (a licence is a kind of
-commercial contract), not a data artefact.
+`ip_agreement`, `employment_agreement`, `lease_agreement`, `acquisition_agreement`.
+The remaining confusion is concentrated at the edges of `commercial_agreement`, the
+residual "contract that is not one of the specific ones" bucket, which genuinely
+overlaps with ip / lease / acquisition. Not a data artefact.
 
 ## Outputs
 

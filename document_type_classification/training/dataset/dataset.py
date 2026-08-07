@@ -14,7 +14,8 @@ from pathlib import Path
 
 # The document types this dataset currently covers. It grows as we add sources.
 LABELS = ("commercial_agreement", "nda", "constitutional", "financial_statements",
-          "ip_agreement", "employment_agreement", "lease_agreement")
+          "ip_agreement", "employment_agreement", "lease_agreement",
+          "acquisition_agreement")
 
 
 @dataclass(frozen=True)

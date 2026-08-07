@@ -73,7 +73,7 @@ def _search(query: str, offset: int, forms: str | None) -> list[dict]:
 # Titles that describe a document ABOUT an agreement rather than the agreement
 # itself, for cases the preposition rule in `title_says` does not reach.
 _NOT_FULL_KEYWORDS = (
-    "AMENDMENT", "AMENDS", "CONSENT", "ASSIGNMENT",
+    "AMENDMENT", "AMENDS", "ADDENDUM", "CONSENT", "ASSIGNMENT",
     "TERMINATION", "WAIVER", "SUPPLEMENT", "NOTICE",
 )
 
@@ -101,6 +101,24 @@ def title_says(agreement: str) -> Callable[[str], bool]:
             return False
         if modifies.search(d):
             return False
+        return not any(k in d for k in _NOT_FULL_KEYWORDS)
+
+    return ok
+
+
+def title_not_modification() -> Callable[[str], bool]:
+    """A `description_ok` predicate for sources whose EXHIBIT TYPE is already the
+    authoritative label (e.g. EX-2 = acquisition / merger agreements), used only to
+    drop sub-documents.
+
+    Unlike `title_says`, this DEFAULT-ACCEPTS. Many full EX-2 agreements carry no
+    descriptive title at all (just "EX-2.1" or blank), so requiring a title phrase
+    would throw most of them away. We keep everything except descriptions that name
+    a modification (amendment, addendum, ...). "AMENDED AND RESTATED ..." is still
+    kept: that is the adjective, the full current text, not a modifying document.
+    """
+    def ok(description: str) -> bool:
+        d = description.upper()
         return not any(k in d for k in _NOT_FULL_KEYWORDS)
 
     return ok

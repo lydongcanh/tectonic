@@ -66,7 +66,7 @@ Four-lens assessment (honest, including the weak spots):
 
 | Type | Data | Text | Human fork | AI fork | Note |
 |---|---|---|---|---|---|
-| acquisition_agreement | strong (EDGAR EX-2, MAUD) | strong | strong (the deal doc) | strong (price, indemnity, MAC, earn-out) | solid |
+| acquisition_agreement | strong (EDGAR EX-2, MAUD) | strong | strong (the deal doc) | strong (price, indemnity, MAC, earn-out) | built; crisp (plan of merger/merger sub/surviving corp), F1 0.96 |
 | financial_statements | strong (EDGAR 10-K) | strong *if tables survive to markdown* | strong (finance) | strong (numbers, not clauses) | solid; depends on table parsing |
 | nda | good (ContractNLI) | strong | strong (gates room access) | strong (term, purpose, carve-outs) | solid |
 | employment_agreement | strong (EDGAR EX-10) | strong | strong (comp exposure) | strong (comp, change-of-control) | solid |
@@ -118,12 +118,12 @@ test *yet* or need a different mechanism.
 
 ## Current status
 
-Seven of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
+Eight of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
 
 ```
 BUILT:   commercial_agreement, nda, constitutional, financial_statements,
-         ip_agreement, employment_agreement, lease_agreement
-PENDING: acquisition_agreement, financing_agreement
+         ip_agreement, employment_agreement, lease_agreement, acquisition_agreement
+PENDING: financing_agreement
 ```
 
 We started from the *fuzziest* boundary on purpose (commercial vs ip): if that is

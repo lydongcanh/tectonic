@@ -23,6 +23,7 @@ from dataset import LABELS, Example, write_jsonl
 from fingerprint import NEAR_DUP_THRESHOLD, sketch, similarity
 from sources.contract_nli import load_contract_nli
 from sources.cuad import load_cuad
+from sources.edgar_acquisition import load_edgar_acquisition
 from sources.edgar_constitutional import load_edgar_constitutional
 from sources.edgar_employment import load_edgar_employment
 from sources.edgar_financial_statements import load_edgar_financial_statements
@@ -65,7 +66,7 @@ def _load_exact_deduped() -> tuple[list[Example], int]:
     exact_dropped = 0
     for load in (load_cuad, load_contract_nli, load_edgar_constitutional,
                  load_edgar_financial_statements, load_edgar_ip,
-                 load_edgar_employment, load_edgar_lease):
+                 load_edgar_employment, load_edgar_lease, load_edgar_acquisition):
         for ex in load():
             if ex.type not in LABELS:
                 continue  # a type we are not modelling yet (CUAD's ip / other)
