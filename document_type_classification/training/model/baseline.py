@@ -35,8 +35,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 from sklearn.pipeline import Pipeline
 
-DATA_DIR = Path("data/document_type")
-ARTIFACT_DIR = Path("artifacts/document_type")
+# Anchor to the repo root so the model reads the dataset and writes artifacts to
+# one place regardless of the current working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../tectonic/
+DATA_DIR = _REPO_ROOT / "data/document_type"
+ARTIFACT_DIR = _REPO_ROOT / "artifacts/document_type"
 TOP_K = 15
 
 BOOTSTRAP_N = 1000        # how many resamples for the confidence interval

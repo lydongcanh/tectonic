@@ -31,7 +31,10 @@ from dataset import Example
 EFTS_URL = "https://efts.sec.gov/LATEST/search-index"
 ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 UA = {"User-Agent": "tectonic-research ted.ly@ansarada.com"}
-CACHE_ROOT = Path("data/raw/edgar")
+# Anchor the cache to the repo root (this file is two levels deeper than the
+# dataset scripts) so raw documents are cached in one place regardless of cwd.
+_REPO_ROOT = Path(__file__).resolve().parents[4]  # .../tectonic/
+CACHE_ROOT = _REPO_ROOT / "data/raw/edgar"
 DEFAULT_MAX_OFFSET = 1000  # how deep to page each query (100 hits per page)
 DELAY_SECONDS = 0.15
 
@@ -73,9 +76,17 @@ def _gather_manifest(
     target: int,
     max_offset: int,
     forms: str | None,
+    max_per_query: int | None,
 ) -> list[dict]:
     """Freeze the list of documents for this type: one exhibit per company, up to
-    target. Built once from EDGAR search, then cached, so the dataset is stable."""
+    target. Built once from EDGAR search, then cached, so the dataset is stable.
+
+    `max_per_query` caps how many documents any single query may contribute. We use
+    it to stop one query dominating the set: for financials each query targets a
+    fiscal year-end, and without a cap the (far more common) December filers would
+    refill the manifest and the model would keep keying on the date instead of the
+    accounting. `None` means no cap (the original behaviour, used by constitutional).
+    """
     manifest_path = type_dir / "manifest.json"
     if manifest_path.exists():
         return json.loads(manifest_path.read_text())
@@ -83,8 +94,11 @@ def _gather_manifest(
     entries: list[dict] = []
     seen_company: set[str] = set()
     for query in queries:
+        added_this_query = 0
         for offset in range(0, max_offset, 100):
             if len(entries) >= target:
+                break
+            if max_per_query is not None and added_this_query >= max_per_query:
                 break
 
             for hit in _search(query, offset, forms):
@@ -107,7 +121,10 @@ def _gather_manifest(
                         "filer": source.get("display_names", ["?"])[0],
                     }
                 )
+                added_this_query += 1
                 if len(entries) >= target:
+                    break
+                if max_per_query is not None and added_this_query >= max_per_query:
                     break
 
             time.sleep(DELAY_SECONDS)
@@ -165,11 +182,12 @@ def load_edgar_exhibits(
     target: int,
     max_offset: int = DEFAULT_MAX_OFFSET,
     forms: str | None = None,
+    max_per_query: int | None = None,
 ) -> Iterator[Example]:
     """Yield one Example per distinct-company exhibit of the given type."""
     type_dir = CACHE_ROOT / doc_type
     for entry in _gather_manifest(
-        type_dir, exhibit_prefix, queries, target, max_offset, forms
+        type_dir, exhibit_prefix, queries, target, max_offset, forms, max_per_query
     ):
         text = _fetch_doc(type_dir, entry)
         if not text.strip():

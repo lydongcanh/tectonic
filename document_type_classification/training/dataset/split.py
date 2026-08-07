@@ -24,7 +24,9 @@ from pathlib import Path
 
 from dataset import Example, read_jsonl, write_jsonl
 
-DATA_DIR = Path("data/document_type")
+# Anchor to the repo root so the split reads/writes the same tree regardless of cwd.
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../tectonic/
+DATA_DIR = _REPO_ROOT / "data/document_type"
 DATASET = DATA_DIR / "dataset.jsonl"
 TRAIN_OUT = DATA_DIR / "train.jsonl"
 TEST_OUT = DATA_DIR / "test.jsonl"

@@ -19,7 +19,9 @@ from pathlib import Path
 from dataset import Example, read_jsonl
 from fingerprint import NEAR_DUP_THRESHOLD, sketch, similarity
 
-DATA_DIR = Path("data/document_type")
+# Anchor to the repo root so the audit checks the same tree regardless of cwd.
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../tectonic/
+DATA_DIR = _REPO_ROOT / "data/document_type"
 REPORT_FLOOR = 0.3  # also surface near-misses above this, for visibility
 
 

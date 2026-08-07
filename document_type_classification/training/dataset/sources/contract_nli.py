@@ -24,7 +24,10 @@ from dataset import Example
 
 CONTRACT_NLI_URL = "https://stanfordnlp.github.io/contract-nli/resources/contract-nli.zip"
 UA = {"User-Agent": "tectonic-research ted.ly@ansarada.com"}
-CACHE_DIR = Path("data/raw/contract_nli")
+# Anchor the cache to the repo root (this file is two levels deeper than the
+# dataset scripts) so the zip is cached in one place regardless of cwd.
+_REPO_ROOT = Path(__file__).resolve().parents[4]  # .../tectonic/
+CACHE_DIR = _REPO_ROOT / "data/raw/contract_nli"
 CACHE_ZIP = CACHE_DIR / "contract-nli.zip"
 SPLITS = ("contract-nli/train.json", "contract-nli/dev.json", "contract-nli/test.json")
 

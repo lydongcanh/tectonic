@@ -26,7 +26,11 @@ from sources.cuad import load_cuad
 from sources.edgar_constitutional import load_edgar_constitutional
 from sources.edgar_financial_statements import load_edgar_financial_statements
 
-OUT_PATH = Path("data/document_type/dataset.jsonl")
+# Anchor data to the repo root so the location never depends on the current
+# working directory. Relative paths resolve against wherever you launch from, so
+# running this from a different folder would silently build a second dataset tree.
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../tectonic/
+OUT_PATH = _REPO_ROOT / "data/document_type/dataset.jsonl"
 
 
 def _normalise(text: str) -> str:
