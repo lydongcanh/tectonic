@@ -72,7 +72,7 @@ Four-lens assessment (honest, including the weak spots):
 | employment_agreement | strong (EDGAR EX-10) | strong | strong (comp exposure) | strong (comp, change-of-control) | solid |
 | financing_agreement | strong (EDGAR EX-10/EX-4) | strong | strong (debt workstream) | strong (covenants, events of default) | solid; internally broad |
 | constitutional | strong (EDGAR EX-3) | strong | strong (approval rights) | strong (its OWN clause taxonomy) | solid |
-| lease_agreement | moderate (EDGAR, thinner) | strong | strong (lease-expiry analytics) | strong (rent, term, break) | keep; watch data volume |
+| lease_agreement | good (EDGAR EX-10, ~120) | strong | strong (lease-expiry analytics) | strong (rent, term, break) | built; crisp (lessor/lessee/rent/premises), F1 0.96 |
 | commercial_agreement | strong (CUAD ~454) | moderate (umbrella) | moderate (catch-all contract) | moderate (one loose schema) | the residual contract bucket |
 | ip_agreement | good (CUAD + EDGAR EX-10 licences) | moderate (overlaps commercial) | good (IP counsel) | strong (licence scope, royalties, ownership) | fuzzy vs commercial (the one real confusion); data no longer thin |
 
@@ -118,12 +118,12 @@ test *yet* or need a different mechanism.
 
 ## Current status
 
-Six of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
+Seven of the nine v1 types are built and trained (held-out macro-F1 ≈ 0.96):
 
 ```
-BUILT:   commercial_agreement, nda, constitutional,
-         financial_statements, ip_agreement, employment_agreement
-PENDING: acquisition_agreement, financing_agreement, lease_agreement
+BUILT:   commercial_agreement, nda, constitutional, financial_statements,
+         ip_agreement, employment_agreement, lease_agreement
+PENDING: acquisition_agreement, financing_agreement
 ```
 
 We started from the *fuzziest* boundary on purpose (commercial vs ip): if that is
