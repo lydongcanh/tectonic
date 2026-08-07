@@ -60,8 +60,12 @@ poetry run python document_type_classification/training/model/baseline.py
 ```
 
 - **baseline.py** — TF-IDF + Logistic Regression. Reads the data files, prints
-  macro-F1 / per-class / confusion matrix / top words, and saves the trained model
-  plus metrics.
+  macro-F1 / per-class report / **per-class bootstrap confidence intervals** /
+  confusion matrix / top words, and saves the trained model plus metrics. The
+  per-class CI is the honest reading of a small-sample score: a class the bootstrap
+  never misclassifies stays at [1.000, 1.000]; a "1.0" on ~25 docs shows an interval
+  reaching well below 1.0. (This measures sampling wobble within the test set only,
+  not generalisation to other document sources.)
 - **inspect_features.py** — on-demand deep look at a trained class's learned
   words, for auditing bias the routine top-15 log is too shallow to show. E.g.
   `inspect_features.py ip_agreement --top 40` or `--grep beijing` (shows every

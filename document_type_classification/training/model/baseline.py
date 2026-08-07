@@ -107,30 +107,46 @@ def _top_features(pipe: Pipeline, k: int) -> dict[str, list[str]]:
     return {cls: names[np.argsort(row)[::-1][:k]].tolist() for cls, row in zip(classes, coef)}
 
 
-def _bootstrap_macro_f1(
+def _bootstrap_f1(
     y_true: list[str], y_pred: list[str], labels: list[str],
     n: int, seed: int, alpha: float,
-) -> tuple[float, float]:
-    """Bootstrap confidence interval for macro-F1.
+) -> tuple[tuple[float, float], dict[str, tuple[float, float]]]:
+    """Bootstrap CIs for macro-F1 AND each individual class's F1, from ONE set of
+    resamples so the two are consistent.
 
-    The trained model and its predictions are FIXED. We repeatedly draw a
-    "pretend test set" by sampling the real test rows WITH REPLACEMENT (same
-    size, some rows repeated, some left out) and recompute macro-F1 on each. The
-    spread of those scores tells us how much the number would wobble if the test
-    set had been a slightly different sample from the same population. No
-    retraining happens. (A refinement is to resample within each class; plain
-    resampling is enough here since both classes are well populated.)
+    The trained model and its predictions are FIXED. We repeatedly draw a "pretend
+    test set" by sampling the real test rows WITH REPLACEMENT (same size, some rows
+    repeated, some left out) and recompute F1 on each. The spread tells us how much
+    the number would wobble if the test set had been a slightly different sample
+    from the same population. No retraining happens.
+
+    The per-class interval is what turns a bare "1.000" into an honest statement:
+    on a class with only ~25 test docs, "1.000" can still carry an interval reaching
+    down to ~0.88, whereas a class the bootstrap never once misclassifies stays
+    pinned at [1.000, 1.000]. IMPORTANT: this only measures sampling wobble WITHIN
+    our test distribution; it says nothing about documents from other sources.
+
+    macro-F1 is the unweighted mean of the per-class F1s, so we compute the per-class
+    vector once per resample and average it, rather than scoring twice.
     """
     yt = np.asarray(y_true)
     yp = np.asarray(y_pred)
     rng = np.random.default_rng(seed)
     idx = np.arange(len(yt))
-    scores = np.empty(n)
+    macro = np.empty(n)
+    per_class = np.empty((n, len(labels)))
     for i in range(n):
         pick = rng.choice(idx, size=len(idx), replace=True)
-        scores[i] = f1_score(yt[pick], yp[pick], labels=labels, average="macro", zero_division=0)
-    lo, hi = np.quantile(scores, [alpha / 2, 1 - alpha / 2])
-    return float(lo), float(hi)
+        f = f1_score(yt[pick], yp[pick], labels=labels, average=None, zero_division=0)
+        per_class[i] = f
+        macro[i] = f.mean()
+    q = [alpha / 2, 1 - alpha / 2]
+    macro_ci = tuple(float(v) for v in np.quantile(macro, q))
+    class_ci = {
+        lbl: tuple(float(v) for v in np.quantile(per_class[:, j], q))
+        for j, lbl in enumerate(labels)
+    }
+    return macro_ci, class_ci
 
 
 def evaluate(
@@ -147,7 +163,7 @@ def evaluate(
     preds = pipe.predict(x_test)
 
     macro = float(f1_score(y_test, preds, labels=labels, average="macro"))
-    ci_lo, ci_hi = _bootstrap_macro_f1(
+    (ci_lo, ci_hi), class_ci = _bootstrap_f1(
         y_test, list(preds), labels, BOOTSTRAP_N, BOOTSTRAP_SEED, CI_ALPHA
     )
     report = classification_report(
@@ -159,6 +175,10 @@ def evaluate(
     print(f"\n===== run: {name} =====")
     print(f"macro-F1: {macro:.3f}   (95% CI {ci_lo:.3f}-{ci_hi:.3f})")
     print(classification_report(y_test, preds, labels=labels, digits=3))
+    print("per-class F1 95% CI (bootstrap; sampling wobble within THIS test set only):")
+    for cls in labels:
+        lo, hi = class_ci[cls]
+        print(f"  {cls:22} [{lo:.3f}, {hi:.3f}]")
     print("confusion matrix (rows = true, cols = predicted)")
     print("labels:", labels)
     print(np.array(matrix))
@@ -175,6 +195,7 @@ def evaluate(
         "labels": labels,
         "macro_f1": macro,
         "macro_f1_ci": [ci_lo, ci_hi],
+        "per_class_f1_ci": {cls: list(class_ci[cls]) for cls in labels},
         "report": report,
         "confusion_matrix": matrix,
         "top_features": features,
