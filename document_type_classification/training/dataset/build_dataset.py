@@ -25,6 +25,7 @@ from sources.contract_nli import load_contract_nli
 from sources.cuad import load_cuad
 from sources.edgar_constitutional import load_edgar_constitutional
 from sources.edgar_financial_statements import load_edgar_financial_statements
+from sources.edgar_ip import load_edgar_ip
 
 # Anchor data to the repo root so the location never depends on the current
 # working directory. Relative paths resolve against wherever you launch from, so
@@ -61,7 +62,7 @@ def _load_exact_deduped() -> tuple[list[Example], int]:
     seen_text: set[str] = set()
     exact_dropped = 0
     for load in (load_cuad, load_contract_nli, load_edgar_constitutional,
-                 load_edgar_financial_statements):
+                 load_edgar_financial_statements, load_edgar_ip):
         for ex in load():
             if ex.type not in LABELS:
                 continue  # a type we are not modelling yet (CUAD's ip / other)

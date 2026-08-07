@@ -21,7 +21,8 @@ import html
 import json
 import re
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -69,24 +70,89 @@ def _search(query: str, offset: int, forms: str | None) -> list[dict]:
         return []
 
 
-def _gather_manifest(
-    type_dir: Path,
+def _hit_to_entry(
+    hit: dict,
     exhibit_prefix: str,
-    queries: list[str],
-    target: int,
-    max_offset: int,
-    forms: str | None,
-    max_per_query: int | None,
-) -> list[dict]:
-    """Freeze the list of documents for this type: one exhibit per company, up to
-    target. Built once from EDGAR search, then cached, so the dataset is stable.
+    description_ok: Callable[[str], bool] | None,
+    seen_company: set[str],
+) -> dict | None:
+    """Turn one search hit into a manifest entry, or return None to skip it.
 
-    `max_per_query` caps how many documents any single query may contribute. We use
-    it to stop one query dominating the set: for financials each query targets a
-    fiscal year-end, and without a cap the (far more common) December filers would
-    refill the manifest and the model would keep keying on the date instead of the
-    accounting. `None` means no cap (the original behaviour, used by constitutional).
+    A hit is skipped when it is the wrong exhibit type, when its filer already
+    contributed a document (one per company, for variety), or when a
+    `description_ok` predicate is given and the filer's own exhibit title
+    (`file_description`) does not pass it. The description gate is how we label IP
+    agreements: there is no authoritative exhibit type for them, so we keep only
+    EX-10 exhibits the filer titled a licence agreement, an independent label that
+    does not peek at the body text the model will learn from.
     """
+    source = hit["_source"]
+    if not str(source.get("file_type", "")).startswith(exhibit_prefix):
+        return None  # not the exhibit type we want
+    if description_ok is not None and not description_ok(source.get("file_description") or ""):
+        return None  # filer's own title does not qualify (e.g. not a full licence)
+
+    company = source["ciks"][0]
+    if company in seen_company:
+        return None
+    seen_company.add(company)
+
+    accession, filename = hit["_id"].split(":", 1)
+    return {
+        "accession": accession,
+        "filename": filename,
+        "cik": company,
+        "file_type": source.get("file_type"),
+        "filer": source.get("display_names", ["?"])[0],
+    }
+
+
+@dataclass(frozen=True)
+class _Search:
+    """The fixed parameters of a manifest-gathering search: everything except the
+    query string and the running result. Bundled so they need not be threaded
+    through each helper one by one.
+
+    * `max_per_query` caps how many documents a single query may contribute, to stop
+      one query dominating. Financials use it: each query targets a fiscal year-end,
+      and without a cap the (far more common) December filers would refill the set
+      and the model would key on the date instead of the accounting. `None` = no cap.
+    * `description_ok` optionally gates on the filer's exhibit title (see
+      `_hit_to_entry`); `None` accepts any title.
+    """
+
+    exhibit_prefix: str
+    target: int
+    max_offset: int
+    forms: str | None
+    max_per_query: int | None
+    description_ok: Callable[[str], bool] | None
+
+
+def _page_one_query(
+    spec: _Search, query: str, entries: list[dict], seen_company: set[str]
+) -> None:
+    """Page a single query, appending accepted entries in place, and stop as soon as
+    the overall target or this query's per-query cap is reached. All stop conditions
+    live here, in one place."""
+    added = 0
+    for offset in range(0, spec.max_offset, 100):
+        for hit in _search(query, offset, spec.forms):
+            entry = _hit_to_entry(hit, spec.exhibit_prefix, spec.description_ok, seen_company)
+            if entry is None:
+                continue
+            entries.append(entry)
+            added += 1
+            if len(entries) >= spec.target:
+                return
+            if spec.max_per_query is not None and added >= spec.max_per_query:
+                return
+        time.sleep(DELAY_SECONDS)
+
+
+def _gather_manifest(type_dir: Path, spec: _Search, queries: list[str]) -> list[dict]:
+    """Freeze the list of documents for this type: one exhibit per company, up to
+    target. Built once from EDGAR search, then cached, so the dataset is stable."""
     manifest_path = type_dir / "manifest.json"
     if manifest_path.exists():
         return json.loads(manifest_path.read_text())
@@ -94,43 +160,9 @@ def _gather_manifest(
     entries: list[dict] = []
     seen_company: set[str] = set()
     for query in queries:
-        added_this_query = 0
-        for offset in range(0, max_offset, 100):
-            if len(entries) >= target:
-                break
-            if max_per_query is not None and added_this_query >= max_per_query:
-                break
-
-            for hit in _search(query, offset, forms):
-                source = hit["_source"]
-                if not str(source.get("file_type", "")).startswith(exhibit_prefix):
-                    continue  # not the exhibit type we want
-
-                company = source["ciks"][0]
-                if company in seen_company:
-                    continue  # one document per company, for variety
-
-                seen_company.add(company)
-                accession, filename = hit["_id"].split(":", 1)
-                entries.append(
-                    {
-                        "accession": accession,
-                        "filename": filename,
-                        "cik": company,
-                        "file_type": source.get("file_type"),
-                        "filer": source.get("display_names", ["?"])[0],
-                    }
-                )
-                added_this_query += 1
-                if len(entries) >= target:
-                    break
-                if max_per_query is not None and added_this_query >= max_per_query:
-                    break
-
-            time.sleep(DELAY_SECONDS)
-
-        if len(entries) >= target:
+        if len(entries) >= spec.target:
             break
+        _page_one_query(spec, query, entries, seen_company)
 
     type_dir.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(entries, indent=2))
@@ -183,12 +215,19 @@ def load_edgar_exhibits(
     max_offset: int = DEFAULT_MAX_OFFSET,
     forms: str | None = None,
     max_per_query: int | None = None,
+    description_ok: Callable[[str], bool] | None = None,
 ) -> Iterator[Example]:
     """Yield one Example per distinct-company exhibit of the given type."""
     type_dir = CACHE_ROOT / doc_type
-    for entry in _gather_manifest(
-        type_dir, exhibit_prefix, queries, target, max_offset, forms, max_per_query
-    ):
+    spec = _Search(
+        exhibit_prefix=exhibit_prefix,
+        target=target,
+        max_offset=max_offset,
+        forms=forms,
+        max_per_query=max_per_query,
+        description_ok=description_ok,
+    )
+    for entry in _gather_manifest(type_dir, spec, queries):
         text = _fetch_doc(type_dir, entry)
         if not text.strip():
             continue  # fetch failed or empty; skip
