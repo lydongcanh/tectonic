@@ -58,23 +58,31 @@ WORDS_PER_CHUNK = 250   # ~325 tokens, safely under mpnet's 384-token window
 CHUNK_CAP = 12          # at most 12 chunks/doc (~3000 words); bounds embedding cost
 ENCODE_BATCH = 64       # chunks per forward pass; throughput knob, not a result knob
 
-# The encoder is loaded lazily and once (it is ~420MB and slow to construct).
-_ENCODER = None
+# Encoders are loaded lazily and cached by name (each is hundreds of MB), so the
+# bake-off can hold several at once and re-runs pay the load cost only once.
+_ENCODERS: dict[str, object] = {}
 
 
-def _encoder():
-    """Load the frozen sentence encoder once and reuse it.
+def _safe_name(model_name: str) -> str:
+    """Make a model id safe to use in a filename (e.g. 'BAAI/bge-large' has a slash)."""
+    return model_name.replace("/", "__")
 
-    Imported here, not at module top, so that importing embed_texts() in the proxy
-    scripts does not force a model load until embedding actually happens.
+
+def _encoder(model_name: str = MODEL_NAME):
+    """Load a frozen sentence encoder once per name and reuse it.
+
+    A raw masked-LM checkpoint (e.g. LegalBERT) is not a sentence-transformer; passing
+    its id here makes sentence-transformers wrap it with a MEAN-pooling head, which is
+    exactly the "frozen LegalBERT as features" setup we want to test. Imported inside
+    the function so importing embed_texts() elsewhere does not force a model load.
     """
-    global _ENCODER
-    if _ENCODER is None:
+    if model_name not in _ENCODERS:
         from sentence_transformers import SentenceTransformer
 
-        _ENCODER = SentenceTransformer(MODEL_NAME)
-        print(f"loaded encoder {MODEL_NAME} on device={_ENCODER.device}")
-    return _ENCODER
+        enc = SentenceTransformer(model_name)
+        print(f"loaded encoder {model_name} on device={enc.device}")
+        _ENCODERS[model_name] = enc
+    return _ENCODERS[model_name]
 
 
 def _chunks(text: str) -> list[str]:
@@ -96,15 +104,16 @@ def _chunks(text: str) -> list[str]:
     return windows[:CHUNK_CAP]
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """Turn documents into one L2-normalized 768-dim vector each (chunk + mean-pool).
+def embed_texts(texts: list[str], model_name: str = MODEL_NAME) -> np.ndarray:
+    """Turn documents into one L2-normalized vector each (chunk + mean-pool).
 
     All chunks across all documents are encoded in ONE batched pass (throughput), then
     regrouped and mean-pooled per document. Pooling before normalizing, then normalizing
     the pooled vector, gives a unit-length document embedding, the natural input for a
-    linear classifier.
+    linear classifier. The output dimensionality follows the chosen encoder (768 for
+    mpnet, 1024 for bge-large, etc.).
     """
-    encoder = _encoder()
+    encoder = _encoder(model_name)
 
     chunks_per_doc = [_chunks(t) for t in texts]
     flat = [c for doc in chunks_per_doc for c in doc]
@@ -128,16 +137,18 @@ def embed_texts(texts: list[str]) -> np.ndarray:
     return out
 
 
-def embed_rows_cached(rows: list[dict], cache_key: str) -> np.ndarray:
-    """Embed rows, caching per split so we pay the encoder cost only once.
+def embed_rows_cached(rows: list[dict], cache_key: str,
+                      model_name: str = MODEL_NAME) -> np.ndarray:
+    """Embed rows, caching per (split, encoder) so we pay the encoder cost only once.
 
     The cache stores the vectors alongside the doc_ids they were built from. If the
     saved doc_ids match the current rows exactly (same set, same order), we trust the
     cache; any mismatch (data rebuilt, rows reordered) recomputes, so a stale cache can
-    never silently feed wrong vectors into a result.
+    never silently feed wrong vectors into a result. The encoder name is part of the
+    filename so different encoders never collide in the cache.
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = CACHE_DIR / f"{cache_key}.{MODEL_NAME}.npz"
+    path = CACHE_DIR / f"{cache_key}.{_safe_name(model_name)}.npz"
     ids = [r["doc_id"] for r in rows]
 
     if path.exists():
@@ -147,7 +158,7 @@ def embed_rows_cached(rows: list[dict], cache_key: str) -> np.ndarray:
             return cached["vectors"]
         print(f"cache stale ({path.name}), recomputing")
 
-    vectors = embed_texts([r["text"] for r in rows])
+    vectors = embed_texts([r["text"] for r in rows], model_name)
     np.savez(path, vectors=vectors, doc_ids=np.array(ids, dtype=object))
     print(f"cached: {path.name}")
     return vectors
