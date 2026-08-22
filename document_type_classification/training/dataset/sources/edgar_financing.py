@@ -34,17 +34,15 @@ QUERIES = ['"indenture"', '"senior notes"', '"debenture"']
 TARGET = 150
 MAX_OFFSET = 3000
 
-# A supplemental indenture is a substantive financing document, so unlike other
-# types we do NOT treat "supplement" as a modification; we drop only true amendments.
-_MODIFICATIONS = (
-    "AMENDMENT", "AMENDS", "ADDENDUM", "CONSENT",
-    "ASSIGNMENT", "TERMINATION", "WAIVER", "NOTICE",
-)
-
 
 def load_edgar_financing() -> Iterator[Example]:
-    """Yield one Example per distinct-company EX-4 debt instrument."""
+    """Yield one Example per distinct-company EX-4 debt instrument.
+
+    `keep_supplements=True`: a supplemental indenture is a full, substantive debt
+    document (a new note series with its own covenants), so unlike other types we do
+    not treat "supplement" as a modification; we still drop true amendments.
+    """
     return load_edgar_exhibits(
         "financing_agreement", "EX-4.", QUERIES, TARGET,
-        max_offset=MAX_OFFSET, description_ok=title_not_modification(_MODIFICATIONS),
+        max_offset=MAX_OFFSET, description_ok=title_not_modification(keep_supplements=True),
     )

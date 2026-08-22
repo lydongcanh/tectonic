@@ -70,12 +70,27 @@ def _search(query: str, offset: int, forms: str | None) -> list[dict]:
         return []
 
 
-# Titles that describe a document ABOUT an agreement rather than the agreement
-# itself, for cases the preposition rule in `title_says` does not reach.
-_NOT_FULL_KEYWORDS = (
-    "AMENDMENT", "AMENDS", "ADDENDUM", "CONSENT", "ASSIGNMENT",
-    "TERMINATION", "WAIVER", "SUPPLEMENT", "NOTICE",
+# "amendment" as a NOUN (a modifying document), tolerant of the misspellings and
+# abbreviations filers really use ("amendement", "amendemnt", "amends", "amend.",
+# "amdt"). It must NOT match the adjective "amended" ("amended and restated ..." is
+# the full current text, which we keep), so we enumerate the noun forms rather than
+# use the shared stem "amend". A real leak this caught: "FIRST AMENDEMENT TO
+# DATABASE LICENSE AGREEMENT" slipped past a plain "AMENDMENT" substring check.
+_AMENDMENT_RE = re.compile(
+    r"\b(?:AMENDMENTS?|AMENDEMENTS?|AMENDEMNTS?|AMENDS|AMEND\.|AMENDMT|AMDTS?)\b"
 )
+
+# Other words that mark a document as modifying an agreement rather than being one.
+# Amendment is handled separately (above), spelling-tolerant.
+_MODIFIER_WORDS = (
+    "ADDENDUM", "CONSENT", "ASSIGNMENT", "TERMINATION", "WAIVER", "SUPPLEMENT", "NOTICE",
+)
+
+
+def _names_a_modification(upper_desc: str, modifier_words: tuple[str, ...]) -> bool:
+    """True if the (upper-cased) title names a document that MODIFIES an agreement
+    rather than being one: an amendment (spelling-tolerant) or a modifier word."""
+    return bool(_AMENDMENT_RE.search(upper_desc)) or any(w in upper_desc for w in modifier_words)
 
 
 def title_says(agreement: str) -> Callable[[str], bool]:
@@ -84,16 +99,23 @@ def title_says(agreement: str) -> Callable[[str], bool]:
     EDGAR has no dedicated exhibit type for licence / employment / lease agreements
     (all are EX-10 material contracts), so we label by the filer's own exhibit title
     in `file_description`. We keep a document only if its title names the agreement
-    (e.g. "EMPLOYMENT AGREEMENT") and is not a sub-document that merely modifies one.
+    (e.g. "EMPLOYMENT AGREEMENT") and is not a sub-document that modifies one.
 
-    A sub-document names the agreement AFTER a preposition: "AMENDMENT TO <A>",
-    "ASSIGNMENT OF <A>", "CONSENT TO THE <A>". Keying on that structure catches
-    modifier words we did not enumerate and their abbreviations (a real example the
-    scout caught: "AMENDS. TO EMPLOYMENT AGREEMENT ..."). "AMENDED AND RESTATED <A>"
-    is kept: it is the full, current text, not a modifying document.
+    Two independent guards catch modifying sub-documents:
+      * the agreement named after "TO" ("AMENDMENT TO <A>", "EXTENSION TO <A>"),
+        which catches modifier words we did not enumerate; and
+      * an explicit modification check (`_names_a_modification`), which catches an
+        amendment even when a qualifier sits between "TO" and the agreement name
+        ("... TO DATABASE LICENSE AGREEMENT", which the first guard alone misses) or
+        the word is misspelled, plus the named modifier words (assignment, consent,
+        addendum, ...).
+    We deliberately do NOT treat "OF <A>" as modifying: its real modifiers
+    (assignment/termination OF) are already in the word list, whereas "FORM OF <A>"
+    and "TRANSLATION OF <A>" are full instances we want to keep. "AMENDED AND
+    RESTATED <A>" is kept too: adjective, the full current text.
     """
     agreement = agreement.upper()
-    modifies = re.compile(r"\b(?:TO|OF)\s+(?:THE\s+)?" + re.escape(agreement))
+    modifies = re.compile(r"\bTO\s+(?:THE\s+)?" + re.escape(agreement))
 
     def ok(description: str) -> bool:
         d = description.upper()
@@ -101,30 +123,29 @@ def title_says(agreement: str) -> Callable[[str], bool]:
             return False
         if modifies.search(d):
             return False
-        return not any(k in d for k in _NOT_FULL_KEYWORDS)
+        return not _names_a_modification(d, _MODIFIER_WORDS)
 
     return ok
 
 
-def title_not_modification(keywords: tuple[str, ...] = _NOT_FULL_KEYWORDS) -> Callable[[str], bool]:
+def title_not_modification(keep_supplements: bool = False) -> Callable[[str], bool]:
     """A `description_ok` predicate for sources whose EXHIBIT TYPE is already the
     authoritative label (e.g. EX-2 = acquisition / merger agreements), used only to
     drop sub-documents.
 
     Unlike `title_says`, this DEFAULT-ACCEPTS. Many full EX-2 agreements carry no
     descriptive title at all (just "EX-2.1" or blank), so requiring a title phrase
-    would throw most of them away. We keep everything except descriptions that name
-    a modification (amendment, addendum, ...). "AMENDED AND RESTATED ..." is still
-    kept: that is the adjective, the full current text, not a modifying document.
+    would throw most of them away. We keep everything except titles that name a
+    modification. "AMENDED AND RESTATED ..." is still kept (adjective, full text).
 
-    `keywords` lets a caller override which titles count as a modification. Financing
-    passes a set WITHOUT "SUPPLEMENT", because a supplemental indenture is a full,
-    substantive debt document (it establishes a new note series with its own
-    covenants), not a throwaway amendment.
+    `keep_supplements=True` (used by financing) does NOT treat "supplement" as a
+    modification, because a supplemental indenture is a full, substantive debt
+    document (it establishes a new note series with its own covenants).
     """
+    words = tuple(w for w in _MODIFIER_WORDS if not (keep_supplements and w == "SUPPLEMENT"))
+
     def ok(description: str) -> bool:
-        d = description.upper()
-        return not any(k in d for k in keywords)
+        return not _names_a_modification(description.upper(), words)
 
     return ok
 
@@ -288,6 +309,14 @@ def load_edgar_exhibits(
         description_ok=description_ok,
     )
     for entry in _gather_manifest(type_dir, spec, queries):
+        # Re-apply the label filter to the stored title on every load, not just when
+        # the manifest is first built. This makes the predicate the single source of
+        # truth: an improved filter (e.g. one that now catches a misspelled amendment)
+        # retroactively drops entries a frozen manifest still lists, with no re-query.
+        desc = entry.get("file_description")
+        if description_ok is not None and desc is not None and not description_ok(desc):
+            continue
+
         text = _fetch_doc(type_dir, entry)
         if not text.strip():
             continue  # fetch failed or empty; skip
