@@ -9,7 +9,6 @@ tags:
 base_model: BAAI/bge-m3
 language:
   - en
-  - vi
 library_name: sklearn
 ---
 
@@ -17,16 +16,18 @@ library_name: sklearn
 
 Classifies a legal / deal document into one of nine types from its text. A
 logistic-regression head on frozen [`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3)
-embeddings, so it is **multilingual** (100+ languages incl. Vietnamese, 8192-token context)
-and embeds whole documents rather than just the first page.
+embeddings, so it is **multilingual** (100+ languages, 8192-token context) and embeds whole
+documents.
 
 **Labels:** `acquisition_agreement`, `commercial_agreement`, `constitutional`,
 `employment_agreement`, `financial_statements`, `financing_agreement`, `ip_agreement`,
 `lease_agreement`, `nda` (`commercial_agreement` is the catch-all for "some other contract").
 
-## Results
+## Evaluation
 
-English held-out test macro-F1 **0.957**. Per-class F1:
+**Measured (English held-out test): macro-F1 0.957.** This is the only *labelled* test
+set that exists (all training data is English: EDGAR / CUAD / ContractNLI), so it is the only
+computed benchmark. Per-class F1:
 
 - `acquisition_agreement`: 0.918
 - `commercial_agreement`: 0.908
@@ -40,11 +41,13 @@ English held-out test macro-F1 **0.957**. Per-class F1:
 
 ![Confusion matrix](confusion_matrix.png)
 
-> **Languages other than English are zero-shot.** The head is trained ONLY on English
-> documents (EDGAR / CUAD / ContractNLI); other languages, including Vietnamese, work through
-> bge-m3's shared multilingual space and are usable but less reliable than English. Confidence
-> is not calibrated, set any accept/escalate threshold empirically. Training documents are
-> US-filing-style, so non-US document structures may differ.
+**Other languages: a capability, not a measured result.** The head is trained only on
+English, and there is no labelled non-English test set, so a score for other languages cannot
+be reported honestly. Other languages work *zero-shot* through bge-m3's shared multilingual
+space, which performs well on public multilingual benchmarks but is **unvalidated for this
+task**. Treat non-English predictions as usable but unverified. Confidence is not calibrated,
+so set any accept/escalate threshold empirically, and note training documents are
+US-filing-style, so non-US document structures may differ.
 
 ## Usage
 
