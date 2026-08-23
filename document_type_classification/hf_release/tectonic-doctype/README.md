@@ -24,13 +24,13 @@ embeddings (the whole document is embedded, by chunking into word windows and me
 
 **Labels:**
 
-- `acquisition_agreement` — M&A / purchase agreements
-- `commercial_agreement` — catch-all for "some other contract"
-- `constitutional` — charters, bylaws
+- `acquisition_agreement`: M&A / purchase agreements
+- `commercial_agreement`: catch-all for "some other contract"
+- `constitutional`: charters, bylaws
 - `employment_agreement`
 - `financial_statements`
-- `financing_agreement` — debt instruments, indentures, notes
-- `ip_agreement` — licences and IP agreements
+- `financing_agreement`: debt instruments, indentures, notes
+- `ip_agreement`: licences and IP agreements
 - `lease_agreement`
 - `nda`
 
