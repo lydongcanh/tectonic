@@ -22,9 +22,17 @@ It is a logistic-regression head on top of frozen
 [`sentence-transformers/all-mpnet-base-v2`](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
 embeddings (the whole document is embedded, by chunking into word windows and mean-pooling).
 
-**Labels:** `acquisition_agreement`, `commercial_agreement`, `constitutional`,
-`employment_agreement`, `financial_statements`, `financing_agreement`, `ip_agreement`,
-`lease_agreement`, `nda` (`commercial_agreement` is the catch-all for "some other contract").
+**Labels:**
+
+- `acquisition_agreement` — M&A / purchase agreements
+- `commercial_agreement` — catch-all for "some other contract"
+- `constitutional` — charters, bylaws
+- `employment_agreement`
+- `financial_statements`
+- `financing_agreement` — debt instruments, indentures, notes
+- `ip_agreement` — licences and IP agreements
+- `lease_agreement`
+- `nda`
 
 ## Results
 

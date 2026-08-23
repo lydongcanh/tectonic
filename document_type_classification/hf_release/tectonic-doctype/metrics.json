@@ -2,10 +2,7 @@
   "model": "embeddings (all-mpnet-base-v2) + logistic regression",
   "in_distribution": {
     "macro_f1": 0.94,
-    "macro_f1_ci95": [
-      0.915,
-      0.963
-    ],
+    "macro_f1_ci95": [0.915, 0.963],
     "per_class_f1": {
       "acquisition_agreement": 0.949,
       "commercial_agreement": 0.895,
@@ -38,25 +35,9 @@
     }
   },
   "encoder_bakeoff": {
-    "columns": [
-      "in_dist_macro_f1",
-      "ip_x_source_recall",
-      "oos_mean_conf"
-    ],
-    "all-mpnet-base-v2 (chosen)": [
-      0.94,
-      0.628,
-      0.85
-    ],
-    "bge-large-en-v1.5": [
-      0.94,
-      0.651,
-      0.6
-    ],
-    "legal-bert-base-uncased (frozen)": [
-      0.88,
-      0.581,
-      0.37
-    ]
+    "columns": ["in_dist_macro_f1", "ip_x_source_recall", "oos_mean_conf"],
+    "all-mpnet-base-v2 (chosen)": [0.94, 0.628, 0.85],
+    "bge-large-en-v1.5": [0.94, 0.651, 0.6],
+    "legal-bert-base-uncased (frozen)": [0.88, 0.581, 0.37]
   }
 }
