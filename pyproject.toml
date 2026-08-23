@@ -3,12 +3,15 @@ name = "tectonic"
 version = "0.1.0"
 description = "Deal-document intelligence, rebuilt to learn. Workstream 1: document type classification."
 requires-python = ">=3.13,<3.14"
-dependencies = ["datasets (>=5.0.1,<6.0.0)", "scikit-learn (>=1.9.0,<2.0.0)", "sentence-transformers (>=6.0.0,<7.0.0)"]
+dependencies = ["datasets (>=5.0.1,<6.0.0)", "scikit-learn (>=1.9.0,<2.0.0)", "sentence-transformers (>=6.0.0,<7.0.0)", "skops (>=0.14.0,<0.15.0)"]
 
 # This repo is an APPLICATION we run, not a library we publish, so we tell
 # poetry not to try to build/install it as an importable package.
 [tool.poetry]
 package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+matplotlib = "^3.11.1"
 
 [build-system]
 requires = ["poetry-core>=2.0"]

@@ -1,0 +1,40 @@
+name: Publish model to Hugging Face
+
+# Manual "button": Actions tab -> this workflow -> "Run workflow". It uploads the PRE-BUILT
+# bundle in document_type_classification/hf_release/tectonic-doctype/ using the official
+# Hugging Face CLI. It does NOT retrain; regenerate the bundle locally with build_release.py
+# and commit it when the model changes.
+#
+# One-time setup:
+#   1. Push this repo to GitHub.
+#   2. Settings -> Secrets and variables -> Actions -> New repository secret:
+#        name: HF_TOKEN   value: a WRITE token from huggingface.co/settings/tokens
+#   3. Commit the bundle folder so CI has something to upload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: "HF repo id, e.g. your-username/tectonic-doctype"
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: pip install "huggingface_hub[cli]>=1.0"
+
+      - name: Upload bundle to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: >
+          hf upload "${{ inputs.repo_id }}"
+          document_type_classification/hf_release/tectonic-doctype
+          --repo-type model
+          --commit-message "Publish document-type classifier"

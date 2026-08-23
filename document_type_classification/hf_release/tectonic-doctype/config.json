@@ -1,0 +1,18 @@
+{
+  "model_type": "sentence_embedding_mean_pooled + logistic_regression",
+  "encoder": "sentence-transformers/all-mpnet-base-v2",
+  "words_per_chunk": 250,
+  "chunk_cap": 12,
+  "labels": [
+    "acquisition_agreement",
+    "commercial_agreement",
+    "constitutional",
+    "employment_agreement",
+    "financial_statements",
+    "financing_agreement",
+    "ip_agreement",
+    "lease_agreement",
+    "nda"
+  ],
+  "trusted_types": []
+}
