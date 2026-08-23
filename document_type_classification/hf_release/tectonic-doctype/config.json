@@ -1,8 +1,9 @@
 {
   "model_type": "sentence_embedding_mean_pooled + logistic_regression",
-  "encoder": "sentence-transformers/all-mpnet-base-v2",
-  "words_per_chunk": 250,
-  "chunk_cap": 12,
+  "encoder": "BAAI/bge-m3",
+  "words_per_chunk": 2000,
+  "chunk_cap": 6,
+  "max_seq_length": 8192,
   "labels": [
     "acquisition_agreement",
     "commercial_agreement",

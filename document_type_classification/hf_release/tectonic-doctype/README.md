@@ -5,55 +5,48 @@ tags:
   - text-classification
   - legal
   - contracts
-base_model: sentence-transformers/all-mpnet-base-v2
-datasets:
-  - theatticusproject/cuad-qa
-metrics:
-  - f1
+  - multilingual
+base_model: BAAI/bge-m3
 language:
   - en
+  - vi
 library_name: sklearn
 ---
 
-# Document Type Classifier (legal / deal documents)
+# Document Type Classifier
 
-Classifies an English legal or deal document into one of **nine types** from its text.
-It is a logistic-regression head on top of frozen
-[`sentence-transformers/all-mpnet-base-v2`](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
-embeddings (the whole document is embedded, by chunking into word windows and mean-pooling).
+Classifies a legal / deal document into one of nine types from its text. A
+logistic-regression head on frozen [`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3)
+embeddings, so it is **multilingual** (100+ languages incl. Vietnamese, 8192-token context)
+and embeds whole documents rather than just the first page.
 
-**Labels:**
-
-- `acquisition_agreement`: M&A / purchase agreements
-- `commercial_agreement`: catch-all for "some other contract"
-- `constitutional`: charters, bylaws
-- `employment_agreement`
-- `financial_statements`
-- `financing_agreement`: debt instruments, indentures, notes
-- `ip_agreement`: licences and IP agreements
-- `lease_agreement`
-- `nda`
+**Labels:** `acquisition_agreement`, `commercial_agreement`, `constitutional`,
+`employment_agreement`, `financial_statements`, `financing_agreement`, `ip_agreement`,
+`lease_agreement`, `nda` (`commercial_agreement` is the catch-all for "some other contract").
 
 ## Results
 
-Held-out test macro-F1 **0.940** (95% CI 0.915–0.963). Compared with a TF-IDF baseline: the
-baseline scores higher *in-distribution*, but this model **generalizes better across document
-sources**, which is what matters for real use.
+English held-out test macro-F1 **0.957**. Per-class F1:
 
-![Embeddings vs TF-IDF baseline](results_vs_baseline.png)
+- `acquisition_agreement`: 0.918
+- `commercial_agreement`: 0.908
+- `constitutional`: 1.000
+- `employment_agreement`: 0.979
+- `financial_statements`: 0.983
+- `financing_agreement`: 0.980
+- `ip_agreement`: 0.892
+- `lease_agreement`: 0.980
+- `nda`: 0.975
 
-![Confusion matrix on the held-out test set](confusion_matrix.png)
+![Confusion matrix](confusion_matrix.png)
 
-> Trained on EDGAR / CUAD / ContractNLI (English, mostly US filings). Generalization to
-> other jurisdictions or scanned documents is only lightly tested, and confidence is
-> under-calibrated, so set any accept/escalate threshold empirically. Full numbers in
-> `metrics.json`.
+> **Languages other than English are zero-shot.** The head is trained ONLY on English
+> documents (EDGAR / CUAD / ContractNLI); other languages, including Vietnamese, work through
+> bge-m3's shared multilingual space and are usable but less reliable than English. Confidence
+> is not calibrated, set any accept/escalate threshold empirically. Training documents are
+> US-filing-style, so non-US document structures may differ.
 
 ## Usage
-
-```bash
-pip install sentence-transformers scikit-learn skops huggingface_hub numpy
-```
 
 ```python
 import numpy as np, skops.io as sio
@@ -61,25 +54,19 @@ from sentence_transformers import SentenceTransformer
 from huggingface_hub import hf_hub_download
 
 REPO = "lydongcanh/tectonic-doctype"
-encoder = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")   # ~420MB, cached
+enc = SentenceTransformer("BAAI/bge-m3")
+enc.max_seq_length = 8192
 head = sio.load(hf_hub_download(REPO, "classifier.skops"), trusted=[])
 
-def classify(text: str) -> dict:
+def classify(text: str):
     words = text.split()
-    chunks = [" ".join(words[i:i+250]) for i in range(0, len(words), 250)][:12] or [""]
-    v = encoder.encode(chunks).mean(0)
-    v = v / np.linalg.norm(v)
-    p = head.predict_proba([v])[0]
-    i = int(p.argmax())
+    chunks = [" ".join(words[i:i+2000]) for i in range(0, len(words), 2000)][:6] or [""]
+    v = enc.encode(chunks).mean(0); v = v / np.linalg.norm(v)
+    p = head.predict_proba([v])[0]; i = int(p.argmax())
     return {"label": head.classes_[i], "confidence": float(p[i])}
-
-print(classify("This Mutual Non-Disclosure Agreement (the “MNDA”) ..."))
-# {'label': 'nda', 'confidence': 0.94}
 ```
 
 ## Data & license
 
-Built from openly licensed / public sources; please keep attribution:
-**CUAD** (© The Atticus Project, CC BY 4.0), **ContractNLI** (CC BY 4.0), and
-**SEC EDGAR** (public US-government records). This derivative model is released under
-**CC BY 4.0**.
+Built from CUAD (© The Atticus Project, CC BY 4.0), ContractNLI (CC BY 4.0), and SEC EDGAR
+(public). Released under CC BY 4.0.

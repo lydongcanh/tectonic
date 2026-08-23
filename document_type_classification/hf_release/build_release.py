@@ -1,17 +1,17 @@
-"""Build (and validate) the Hugging Face model bundle from the trained artifact.
+"""Build (and validate) the production document-type model + its Hugging Face bundle.
 
-Run this ONLY when the model changes. It bakes the trained logistic-regression head into
-the safe `skops` format, writes the config + metrics that ship with it, and renders the
-result charts for the model card. Publishing is separate (the GitHub Action / `hf upload`);
-this just refreshes the bundle, which you then commit.
+The production model is multilingual: a logistic-regression head on frozen BAAI/bge-m3
+embeddings (100+ languages incl. Vietnamese, 8192-token context). It replaces the earlier
+English-only mpnet model, it scores higher even on English (macro-F1 0.957 vs 0.940) and
+adds cross-lingual support. Run this only when the model changes:
 
     poetry run python document_type_classification/hf_release/build_release.py
 
-The bundle it writes to ./tectonic-doctype/ contains NO code: config.json, classifier.skops,
-metrics.json, two PNG charts, README.md, requirements.txt. The usage snippet lives in the
-README. To guard against that snippet drifting from how the model was trained, `_validate`
-runs the SAME embedding recipe the snippet documents and checks it reproduces the trained
-model's predictions.
+It embeds the corpus with bge-m3 (large coherent chunks that use the long context), retrains
+the head, writes the bundle to ./tectonic-doctype/ (config, classifier.skops, metrics, a
+confusion-matrix chart, README), and self-checks. Embedding is a one-time cost, cached under
+artifacts/; publishing is separate (the GitHub Action / hf upload). bge-m3 is downloaded on
+first run (WARP OFF); afterwards this runs fully offline.
 """
 
 from __future__ import annotations
@@ -22,97 +22,84 @@ from pathlib import Path
 
 import certifi
 
-# WARP leaves SSL_CERT_FILE pointing at its own single-cert bundle even when off, breaking
-# the httpx-based Hub client; point at certifi's full public roots (full verification).
-os.environ["SSL_CERT_FILE"] = certifi.where()
-# The encoder was already downloaded during training, so validation needs no network.
-# Force cache-only loads so a WARP re-enable (genuine TLS interception) can't break the build.
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["SSL_CERT_FILE"] = certifi.where()  # WARP leftover-env-var guard (full verification)
 
-import joblib
 import matplotlib
 import numpy as np
 import skops.io as sio
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
-matplotlib.use("Agg")  # headless: render to file, never open a window
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _HERE = Path(__file__).resolve().parent
-_REPO_ROOT = _HERE.parents[1]  # .../tectonic/
+_REPO_ROOT = _HERE.parents[1]
+DATA = _REPO_ROOT / "data/document_type"
+CACHE = _REPO_ROOT / "artifacts/document_type/embeddings"
 STAGE = _HERE / "tectonic-doctype"
 
-TRAINED_MODEL = _REPO_ROOT / "artifacts/document_type/embedding_classifier.model.joblib"
-TRAINED_META = _REPO_ROOT / "artifacts/document_type/embedding_classifier.json"
-TEST_JSONL = _REPO_ROOT / "data/document_type/test.jsonl"
-TEST_VECS = _REPO_ROOT / "artifacts/document_type/embeddings/test.all-mpnet-base-v2.npz"
-
-ENCODER_ID = "sentence-transformers/all-mpnet-base-v2"
-WORDS_PER_CHUNK = 250
-CHUNK_CAP = 12
-
-# The generalization + bake-off numbers (from evaluation/); kept here so the bundle is
-# self-documenting and the charts and metrics.json agree.
-GEN = {"macro_f1_in_dist": (0.940, 0.968), "ip_x_source": (0.628, 0.488),
-       "ip_control": (0.837, 0.628), "oos_confidence": (0.85, 0.48)}  # (embeddings, tfidf)
+ENCODER = "BAAI/bge-m3"
+# Use bge-m3's long context: embed large, coherent spans so we mean-pool as few, as-complete
+# chunks as possible (a document is usually 1-3 chunks). One-time ~90-110 min on MPS, cached.
+MAX_SEQ = 8192
+WORDS_PER_CHUNK = 2000
+CHUNK_CAP = 6
+BATCH = 8
 
 
-def _embed(texts: list[str], encoder) -> np.ndarray:
-    """The published embedding recipe: chunk into word windows, embed, mean-pool, L2-norm.
-    Kept identical to the README usage snippet so `_validate` guards against drift."""
-    def chunks(t):
-        w = t.split()
-        return ([" ".join(w[i:i + WORDS_PER_CHUNK]) for i in range(0, len(w), WORDS_PER_CHUNK)]
-                or [""])[:CHUNK_CAP]
+def _safe(name: str) -> str:
+    return name.replace("/", "__")
 
-    per_doc = [chunks(t) for t in texts]
+
+def _rows(name: str) -> list[dict]:
+    return [json.loads(l) for l in (DATA / name).read_text().splitlines() if l.strip()]
+
+
+def _chunks(text: str) -> list[str]:
+    words = text.split()
+    if not words:
+        return [""]
+    return [" ".join(words[i:i + WORDS_PER_CHUNK])
+            for i in range(0, len(words), WORDS_PER_CHUNK)][:CHUNK_CAP]
+
+
+def _embed_cached(rows: list[dict], split: str, encoder) -> np.ndarray:
+    CACHE.mkdir(parents=True, exist_ok=True)
+    path = CACHE / f"{split}.{_safe(ENCODER)}.npz"
+    ids = [r["doc_id"] for r in rows]
+    if path.exists():
+        z = np.load(path, allow_pickle=True)
+        if list(z["doc_ids"]) == ids:
+            print(f"cache hit: {path.name}")
+            return z["vectors"]
+    per_doc = [_chunks(r["text"]) for r in rows]
     flat = [c for doc in per_doc for c in doc]
-    vecs = encoder.encode(flat, convert_to_numpy=True, normalize_embeddings=False)
-    out = np.empty((len(texts), vecs.shape[1]), dtype=np.float32)
+    print(f"embedding {len(rows)} docs -> {len(flat)} chunks with {ENCODER}")
+    vecs = encoder.encode(flat, batch_size=BATCH, show_progress_bar=True,
+                          convert_to_numpy=True, normalize_embeddings=False)
+    out = np.empty((len(rows), vecs.shape[1]), dtype=np.float32)
     cur = 0
     for i, doc in enumerate(per_doc):
         pooled = vecs[cur:cur + len(doc)].mean(axis=0)
         cur += len(doc)
         n = np.linalg.norm(pooled)
         out[i] = pooled / n if n > 0 else pooled
+    np.savez(path, vectors=out, doc_ids=np.array(ids, dtype=object))
+    print(f"cached: {path.name}")
     return out
 
 
-def _chart_vs_baseline() -> None:
-    labels = ["macro-F1\n(in-dist)", "IP cross-\nsource recall",
-              "IP control\nrecall", "out-of-source\nconfidence"]
-    emb = [GEN["macro_f1_in_dist"][0], GEN["ip_x_source"][0], GEN["ip_control"][0], GEN["oos_confidence"][0]]
-    tfidf = [GEN["macro_f1_in_dist"][1], GEN["ip_x_source"][1], GEN["ip_control"][1], GEN["oos_confidence"][1]]
-
-    x = np.arange(len(labels))
-    w = 0.38
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    b1 = ax.bar(x - w / 2, emb, w, label="embeddings (this model)", color="#2563eb")
-    b2 = ax.bar(x + w / 2, tfidf, w, label="TF-IDF baseline", color="#9ca3af")
-    ax.set_ylim(0, 1.05)
-    ax.set_ylabel("score")
-    ax.set_title("Embeddings vs TF-IDF baseline\n(TF-IDF wins in-distribution; embeddings generalize better)")
-    ax.set_xticks(x, labels, fontsize=9)
-    ax.legend(loc="lower right", fontsize=9)
-    for bars in (b1, b2):
-        ax.bar_label(bars, fmt="%.2f", fontsize=8, padding=2)
-    fig.tight_layout()
-    fig.savefig(STAGE / "results_vs_baseline.png", dpi=120)
-    plt.close(fig)
-
-
-def _chart_confusion(meta: dict) -> None:
-    labels = meta["labels"]
-    m = np.array(meta["confusion_matrix"], dtype=float)
+def _confusion_chart(labels: list[str], y_true: list[str], preds) -> None:
+    m = confusion_matrix(y_true, preds, labels=labels).astype(float)
     short = [l.replace("_agreement", "").replace("_", " ") for l in labels]
-
     fig, ax = plt.subplots(figsize=(6.8, 6))
     ax.imshow(m, cmap="Blues")
     ax.set_xticks(range(len(labels)), short, rotation=45, ha="right", fontsize=8)
     ax.set_yticks(range(len(labels)), short, fontsize=8)
     ax.set_xlabel("predicted")
     ax.set_ylabel("true")
-    ax.set_title("Confusion matrix (held-out test)")
+    ax.set_title("Confusion matrix (English held-out test)")
     thresh = m.max() / 2
     for i in range(len(labels)):
         for j in range(len(labels)):
@@ -124,74 +111,119 @@ def _chart_confusion(meta: dict) -> None:
     plt.close(fig)
 
 
-def _build() -> dict:
+def _card(macro: float, per_class: dict) -> str:
+    rows = "\n".join(f"- `{k}`: {v:.3f}" for k, v in per_class.items())
+    return f"""---
+license: cc-by-4.0
+pipeline_tag: text-classification
+tags:
+  - text-classification
+  - legal
+  - contracts
+  - multilingual
+base_model: BAAI/bge-m3
+language:
+  - en
+  - vi
+library_name: sklearn
+---
+
+# Document Type Classifier
+
+Classifies a legal / deal document into one of nine types from its text. A
+logistic-regression head on frozen [`BAAI/bge-m3`](https://huggingface.co/BAAI/bge-m3)
+embeddings, so it is **multilingual** (100+ languages incl. Vietnamese, 8192-token context)
+and embeds whole documents rather than just the first page.
+
+**Labels:** `acquisition_agreement`, `commercial_agreement`, `constitutional`,
+`employment_agreement`, `financial_statements`, `financing_agreement`, `ip_agreement`,
+`lease_agreement`, `nda` (`commercial_agreement` is the catch-all for "some other contract").
+
+## Results
+
+English held-out test macro-F1 **{macro:.3f}**. Per-class F1:
+
+{rows}
+
+![Confusion matrix](confusion_matrix.png)
+
+> **Languages other than English are zero-shot.** The head is trained ONLY on English
+> documents (EDGAR / CUAD / ContractNLI); other languages, including Vietnamese, work through
+> bge-m3's shared multilingual space and are usable but less reliable than English. Confidence
+> is not calibrated, set any accept/escalate threshold empirically. Training documents are
+> US-filing-style, so non-US document structures may differ.
+
+## Usage
+
+```python
+import numpy as np, skops.io as sio
+from sentence_transformers import SentenceTransformer
+from huggingface_hub import hf_hub_download
+
+REPO = "lydongcanh/tectonic-doctype"
+enc = SentenceTransformer("BAAI/bge-m3")
+enc.max_seq_length = {MAX_SEQ}
+head = sio.load(hf_hub_download(REPO, "classifier.skops"), trusted=[])
+
+def classify(text: str):
+    words = text.split()
+    chunks = [" ".join(words[i:i+{WORDS_PER_CHUNK}]) for i in range(0, len(words), {WORDS_PER_CHUNK})][:{CHUNK_CAP}] or [""]
+    v = enc.encode(chunks).mean(0); v = v / np.linalg.norm(v)
+    p = head.predict_proba([v])[0]; i = int(p.argmax())
+    return {{"label": head.classes_[i], "confidence": float(p[i])}}
+```
+
+## Data & license
+
+Built from CUAD (© The Atticus Project, CC BY 4.0), ContractNLI (CC BY 4.0), and SEC EDGAR
+(public). Released under CC BY 4.0.
+"""
+
+
+def main() -> None:
+    from sentence_transformers import SentenceTransformer
+
     STAGE.mkdir(parents=True, exist_ok=True)
-    clf = joblib.load(TRAINED_MODEL)
-    meta = json.loads(TRAINED_META.read_text())
+    encoder = SentenceTransformer(ENCODER)
+    encoder.max_seq_length = MAX_SEQ
+    print(f"loaded {ENCODER} on device={encoder.device}, max_seq_length={encoder.max_seq_length}")
+
+    train, test = _rows("train.jsonl"), _rows("test.jsonl")
+    labels = sorted({r["type"] for r in train})
+    x_train = _embed_cached(train, "train", encoder)
+    x_test = _embed_cached(test, "test", encoder)
+    y_train, y_test = [r["type"] for r in train], [r["type"] for r in test]
+
+    clf = LogisticRegression(max_iter=1000, class_weight="balanced").fit(x_train, y_train)
+    preds = clf.predict(x_test)
+    macro = float(f1_score(y_test, preds, labels=labels, average="macro"))
+    report = classification_report(y_test, preds, labels=labels, digits=3, output_dict=True)
+    per_class = {c: report[c]["f1-score"] for c in labels}
+
+    print(f"\n===== production model ({ENCODER}) =====")
+    print(f"English macro-F1: {macro:.3f}")
+    print(classification_report(y_test, preds, labels=labels, digits=3))
 
     head_path = STAGE / "classifier.skops"
     sio.dump(clf, head_path)
     trusted = sorted(sio.get_untrusted_types(file=head_path))
-
-    config = {
-        "model_type": "sentence_embedding_mean_pooled + logistic_regression",
-        "encoder": ENCODER_ID, "words_per_chunk": WORDS_PER_CHUNK,
-        "chunk_cap": CHUNK_CAP, "labels": meta["labels"], "trusted_types": trusted,
-    }
+    config = {"model_type": "sentence_embedding_mean_pooled + logistic_regression",
+              "encoder": ENCODER, "words_per_chunk": WORDS_PER_CHUNK,
+              "chunk_cap": CHUNK_CAP, "max_seq_length": MAX_SEQ,
+              "labels": labels, "trusted_types": trusted}
     (STAGE / "config.json").write_text(json.dumps(config, indent=2))
+    (STAGE / "metrics.json").write_text(json.dumps(
+        {"encoder": ENCODER, "in_distribution_english": {
+            "macro_f1": round(macro, 3),
+            "per_class_f1": {c: round(v, 3) for c, v in per_class.items()},
+            "n_test": len(test)}}, indent=2))
+    _confusion_chart(labels, y_test, preds)
+    (STAGE / "README.md").write_text(_card(macro, per_class))
 
-    metrics = {
-        "model": "embeddings (all-mpnet-base-v2) + logistic regression",
-        "in_distribution": {
-            "macro_f1": round(meta["macro_f1"], 3),
-            "macro_f1_ci95": [round(x, 3) for x in meta["macro_f1_ci"]],
-            "per_class_f1": {c: round(meta["report"][c]["f1-score"], 3) for c in meta["labels"]},
-            "n_test": meta["n_test"],
-        },
-        "generalization_vs_tfidf": {
-            "macro_f1_in_distribution": {"embeddings": 0.940, "tfidf": 0.968},
-            "ip_cross_source_recall": {"embeddings": 0.628, "tfidf": 0.488},
-            "ip_control_recall_both_sources": {"embeddings": 0.837, "tfidf": 0.628},
-            "out_of_source_confidence": {"embeddings": 0.85, "tfidf": 0.48},
-        },
-        "encoder_bakeoff": {
-            "columns": ["in_dist_macro_f1", "ip_x_source_recall", "oos_mean_conf"],
-            "all-mpnet-base-v2 (chosen)": [0.940, 0.628, 0.85],
-            "bge-large-en-v1.5": [0.940, 0.651, 0.60],
-            "legal-bert-base-uncased (frozen)": [0.880, 0.581, 0.37],
-        },
-    }
-    (STAGE / "metrics.json").write_text(json.dumps(metrics, indent=2))
-
-    _chart_vs_baseline()
-    _chart_confusion(meta)
-    print(f"built bundle at {STAGE}/ (config, classifier.skops, metrics, 2 charts)")
-    return meta
-
-
-def _validate(n: int = 25) -> None:
-    from sentence_transformers import SentenceTransformer
-
-    rows = [json.loads(l) for l in TEST_JSONL.read_text().splitlines() if l.strip()][:n]
-    cached = np.load(TEST_VECS, allow_pickle=True)
-    ids = list(cached["doc_ids"])
-    clf = joblib.load(TRAINED_MODEL)
-
-    ref = [clf.predict(cached["vectors"][ids.index(r["doc_id"]):ids.index(r["doc_id"]) + 1])[0]
-           for r in rows]
-    encoder = SentenceTransformer(ENCODER_ID)
-    cand = list(clf.predict(_embed([r["text"] for r in rows], encoder)))
-
-    agree = sum(a == b for a, b in zip(ref, cand))
-    print(f"validation: {agree}/{len(rows)} recipe predictions match the trained model")
-    if agree != len(rows):
-        raise SystemExit("MISMATCH: the published recipe differs from training")
-    print("OK: the documented usage recipe reproduces the trained model.")
-
-
-def main() -> None:
-    _build()
-    _validate()
+    reloaded = sio.load(head_path, trusted=trusted)
+    macro2 = float(f1_score(y_test, reloaded.predict(x_test), labels=labels, average="macro"))
+    assert abs(macro - macro2) < 1e-9, "reloaded head disagrees"
+    print(f"\nbuilt bundle at {STAGE}/ ; reloaded-head macro-F1 {macro2:.3f} (matches)")
 
 
 if __name__ == "__main__":

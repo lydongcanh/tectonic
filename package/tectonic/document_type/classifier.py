@@ -24,11 +24,13 @@ class DocumentTypeClassifier:
     `classify_batch`. The encoder is loaded lazily on the first prediction and reused.
     """
 
-    def __init__(self, head, encoder_name: str, words_per_chunk: int, chunk_cap: int):
+    def __init__(self, head, encoder_name: str, words_per_chunk: int, chunk_cap: int,
+                 max_seq_length: int | None = None):
         self._head = head
         self._encoder_name = encoder_name
         self._words_per_chunk = words_per_chunk
         self._chunk_cap = chunk_cap
+        self._max_seq_length = max_seq_length
         self._encoder = None
 
     @classmethod
@@ -55,13 +57,18 @@ class DocumentTypeClassifier:
         # skops loads only the types the model author vetted at build time (recorded in the
         # config), which is why it is safer than pickle.
         head = sio.load(head_path, trusted=config.get("trusted_types", []))
-        return cls(head, config["encoder"], config["words_per_chunk"], config["chunk_cap"])
+        return cls(head, config["encoder"], config["words_per_chunk"], config["chunk_cap"],
+                   config.get("max_seq_length"))
 
     def _get_encoder(self):
         if self._encoder is None:
             from sentence_transformers import SentenceTransformer
 
             self._encoder = SentenceTransformer(self._encoder_name)
+            # Match training's context window (e.g. bge-m3's 8192) so long chunks are not
+            # silently truncated to a lower default, which would diverge from training.
+            if self._max_seq_length is not None:
+                self._encoder.max_seq_length = self._max_seq_length
         return self._encoder
 
     def classify(self, text: str) -> Prediction:

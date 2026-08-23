@@ -1,43 +1,18 @@
 {
-  "model": "embeddings (all-mpnet-base-v2) + logistic regression",
-  "in_distribution": {
-    "macro_f1": 0.94,
-    "macro_f1_ci95": [0.915, 0.963],
+  "encoder": "BAAI/bge-m3",
+  "in_distribution_english": {
+    "macro_f1": 0.957,
     "per_class_f1": {
-      "acquisition_agreement": 0.949,
-      "commercial_agreement": 0.895,
-      "constitutional": 0.982,
-      "employment_agreement": 1.0,
-      "financial_statements": 0.966,
-      "financing_agreement": 0.939,
-      "ip_agreement": 0.862,
-      "lease_agreement": 0.906,
-      "nda": 0.966
+      "acquisition_agreement": 0.918,
+      "commercial_agreement": 0.908,
+      "constitutional": 1.0,
+      "employment_agreement": 0.979,
+      "financial_statements": 0.983,
+      "financing_agreement": 0.98,
+      "ip_agreement": 0.892,
+      "lease_agreement": 0.98,
+      "nda": 0.975
     },
     "n_test": 426
-  },
-  "generalization_vs_tfidf": {
-    "macro_f1_in_distribution": {
-      "embeddings": 0.94,
-      "tfidf": 0.968
-    },
-    "ip_cross_source_recall": {
-      "embeddings": 0.628,
-      "tfidf": 0.488
-    },
-    "ip_control_recall_both_sources": {
-      "embeddings": 0.837,
-      "tfidf": 0.628
-    },
-    "out_of_source_confidence": {
-      "embeddings": 0.85,
-      "tfidf": 0.48
-    }
-  },
-  "encoder_bakeoff": {
-    "columns": ["in_dist_macro_f1", "ip_x_source_recall", "oos_mean_conf"],
-    "all-mpnet-base-v2 (chosen)": [0.94, 0.628, 0.85],
-    "bge-large-en-v1.5": [0.94, 0.651, 0.6],
-    "legal-bert-base-uncased (frozen)": [0.88, 0.581, 0.37]
   }
 }

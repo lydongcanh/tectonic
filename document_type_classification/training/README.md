@@ -57,15 +57,15 @@ Supporting modules (not run directly):
 
 ## model/ — train and evaluate
 
-Two models are trained on the same data. TF-IDF is the **baseline** (the permanent
-reference bar and our glass-box interpretability tool); embeddings + LogReg is the
-**v1 production model**, chosen on evidence from the `evaluation/` probes.
+This folder holds the **TF-IDF baseline** (`baseline.py`). It is not the shipped model but a
+permanent tool: the reference bar every model is measured against and, because it is linear
+over words, our glass-box readout of *which words* drive each class. The **shipped production
+model** is the multilingual bge-m3 classifier, built and bundled by
+`../hf_release/build_release.py`. How we chose embeddings over TF-IDF, and bge-m3 over other
+encoders, is recorded in `evaluation/`.
 
 ```bash
-# baseline (reference / glass-box)
 poetry run python document_type_classification/training/model/baseline.py
-# v1 production model
-poetry run python document_type_classification/training/model/embedding_classifier.py
 ```
 
 - **baseline.py** — TF-IDF + Logistic Regression. Reads the data files, prints
@@ -77,17 +77,6 @@ poetry run python document_type_classification/training/model/embedding_classifi
   not generalisation to other document sources.) Because it is linear over words it
   stays useful even now: it is how we read *which words* drive a class, so it remains
   the interpretability tool and the bar the production model is measured against.
-- **embedding_classifier.py** — the v1 **production** model: the same
-  LogisticRegression, on a dense semantic vector per document instead of word counts.
-  Same evaluation (macro-F1, per-class bootstrap CI, confusion matrix). macro-F1 ≈ 0.940
-  in-distribution, slightly under TF-IDF's 0.968, but it generalises better across
-  sources, which is the property that matters for deployment (see status below and
-  `evaluation/`). The saved metadata records the encoder and chunk parameters, so
-  inference cannot silently drift from how the model was trained.
-- **embedding.py** — the embedding engine behind it: loads the frozen encoder
-  (`all-mpnet-base-v2`), splits each document into word windows, embeds and mean-pools
-  them into one vector (so the short-context encoder still sees roughly the whole
-  document, the way TF-IDF does), and caches vectors per split so re-training is instant.
 - **inspect_features.py** — on-demand deep look at a trained class's learned
   words, for auditing bias the routine top-15 log is too shallow to show. E.g.
   `inspect_features.py ip_agreement --top 40` or `--grep beijing` (shows every
@@ -112,31 +101,29 @@ model; they interrogate it, so they answer "should we trust the scores?" rather 
 
 All nine v1 classes are built (`commercial_agreement`, `nda`, `constitutional`,
 `financial_statements`, `ip_agreement`, `employment_agreement`, `lease_agreement`,
-`acquisition_agreement`, `financing_agreement`), and two models are trained on the same
-data:
+`acquisition_agreement`, `financing_agreement`). Two models live here:
 
-- **Baseline (TF-IDF + LogReg):** macro-F1 ≈ 0.968 in-distribution. Kept as the
-  reference bar and interpretability tool.
-- **v1 production (embeddings + LogReg):** macro-F1 ≈ 0.940 in-distribution.
+- **Baseline (TF-IDF + LogReg):** macro-F1 ≈ 0.968 in-distribution. Kept as the reference
+  bar and glass-box interpretability tool.
+- **PRODUCTION: multilingual (bge-m3 + LogReg):** English held-out macro-F1 ≈ **0.957**,
+  and multilingual (100+ languages incl. Vietnamese, 8192-token context; Vietnamese works
+  zero-shot through the shared multilingual space). Built and bundled by
+  `../hf_release/build_release.py`; heavier (~2.2GB) but a better representation.
 
-The production model being the *lower* in-distribution scorer is deliberate.
-In-distribution scores are the ones we trust least: every class is sourced from
-essentially one origin (EDGAR / EDGAR-derived), so a bag-of-words model can score well
-by keying on corpus house style rather than document meaning. The `evaluation/` probes
-tested the property that actually matters for deployment on non-EDGAR documents,
-generalisation across sources, and embeddings won clearly:
+Why embeddings, not the *higher* in-distribution TF-IDF? In-distribution is the metric we
+trust least: every class comes from essentially one origin (EDGAR / EDGAR-derived), so a
+bag-of-words model can win by keying on corpus house style rather than meaning. The
+`evaluation/` probes tested generalisation across sources, which is what matters for
+deployment, and embeddings won clearly (ip cross-source recall **0.63 vs 0.49**; out-of-source
+documents far more confident). The path there ran through an English mpnet model and an
+encoder bake-off (mpnet vs bge-large vs frozen LegalBERT); bge-m3 was then adopted for
+multilingual and turned out to beat mpnet on English too. That full story lives in
+`evaluation/` and git history.
 
-- ip cross-source recall (train on EDGAR ip, test on unseen CUAD ip): **0.63** vs
-  TF-IDF's **0.49**.
-- out-of-source docs (genuinely non-EDGAR): both models correct, but embeddings far more
-  confident (mean 0.85 vs 0.48).
-
-An encoder bake-off (`all-mpnet-base-v2` vs `bge-large` vs frozen LegalBERT) picked
-mpnet: it tied the strongest modern encoder on generalisation within noise while being
-more confident, smaller, and faster; frozen LegalBERT lost on every metric (a raw
-masked-LM makes poor pooled document vectors). All encoders miss the *same* handful of
-CUAD content-licences that genuinely read as commercial, a data/label ceiling, not an
-encoder problem.
+Honest caveat that still stands: in-distribution scores flatter the model; generalisation to
+non-EDGAR, non-US, or non-English documents is only lightly tested. And every encoder misses
+the *same* handful of CUAD content-licences that genuinely read as commercial, a data/label
+ceiling, not an encoder problem.
 
 The remaining confusion is concentrated at the edges of `commercial_agreement`, the
 residual "contract that is not one of the specific ones" bucket, which genuinely overlaps
