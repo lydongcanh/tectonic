@@ -13,10 +13,6 @@ name: Publish model to Hugging Face
 
 on:
   workflow_dispatch:
-    inputs:
-      repo_id:
-        description: "HF repo id, e.g. your-username/tectonic-doctype"
-        required: true
 
 jobs:
   publish:
@@ -34,7 +30,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: >
-          hf upload "${{ inputs.repo_id }}"
+          hf upload lydongcanh/tectonic-doctype
           document_type_classification/hf_release/tectonic-doctype
           --repo-type model
           --commit-message "Publish document-type classifier"
