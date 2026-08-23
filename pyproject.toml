@@ -1,17 +1,39 @@
 [project]
 name = "tectonic"
 version = "0.1.0"
-description = "Deal-document intelligence, rebuilt to learn. Workstream 1: document type classification."
+description = "Deal-document intelligence. Feature 1: document type classification."
+readme = "README.md"
 requires-python = ">=3.13,<3.14"
-dependencies = ["datasets (>=5.0.1,<6.0.0)", "scikit-learn (>=1.9.0,<2.0.0)", "sentence-transformers (>=6.0.0,<7.0.0)", "skops (>=0.14.0,<0.15.0)"]
+# Base install is intentionally light. Each feature's heavy ML dependencies live in an
+# "extra" so consumers install only what they use (e.g. pip install tectonic[document-type]).
+dependencies = []
 
-# This repo is an APPLICATION we run, not a library we publish, so we tell
-# poetry not to try to build/install it as an importable package.
+[project.optional-dependencies]
+document-type = [
+    "sentence-transformers (>=6.0.0,<7.0.0)",
+    "scikit-learn (>=1.9.0,<2.0.0)",
+    "skops (>=0.14.0,<0.15.0)",
+    "huggingface-hub (>=1.0.0,<2.0.0)",
+    "numpy (>=2.0.0,<3.0.0)",
+]
+
+# TODO before the first PyPI publish: add authors, license, and classifiers, and confirm
+# the name "tectonic" is available on pypi.org.
+
 [tool.poetry]
-package-mode = false
+# The publishable package is package/tectonic only; the training/eval/hf_release code is
+# NOT shipped (it lives outside package/ and is excluded from the wheel).
+packages = [{ include = "tectonic", from = "package" }]
 
+# Tools used only to BUILD data and models locally (training + eval), never shipped.
+# Install everything for development with:  poetry install --all-extras
 [tool.poetry.group.dev.dependencies]
 matplotlib = "^3.11.1"
+datasets = "^5.0.1"
+
+
+[tool.poetry.group.demo.dependencies]
+gradio = "^6.25.0"
 
 [build-system]
 requires = ["poetry-core>=2.0"]
