@@ -38,6 +38,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]  # .../tectonic/
 CACHE_ROOT = _REPO_ROOT / "data/raw/edgar"
 DEFAULT_MAX_OFFSET = 1000  # how deep to page each query (100 hits per page)
 DELAY_SECONDS = 0.15
+SEARCH_RETRIES = 4  # transient search failures are retried, then raised (never swallowed)
+# SEC throttles with an HTTP-200 HTML page (not a JSON error), and also returns 429/5xx
+# under load. Any of these must NOT be read as "no more hits" (that silently truncates a
+# frozen manifest); we retry, then fail loudly if they persist.
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 # A fetched "document" that is too short, or carries a known SEC error/maintenance
 # signature, is not a real exhibit. SEC returns these with HTTP 200, so a status
@@ -60,14 +65,41 @@ def html_to_text(doc: str) -> str:
 
 
 def _search(query: str, offset: int, forms: str | None) -> list[dict]:
+    """One page of EDGAR full-text search hits.
+
+    A returned list is an AUTHORITATIVE result: empty means genuinely no hits, so the
+    pager can stop. A transient failure (network error, throttling HTML served as HTTP
+    200, or a retryable 5xx/429) must never be mistaken for "no hits", or a frozen
+    manifest silently ends up short. We retry those, then raise if they persist; a
+    non-retryable client error (e.g. 400) raises immediately.
+    """
     params: dict = {"q": query, "from": offset}
     if forms:
         params["forms"] = forms  # restrict to a filing form, e.g. "10-K"
-    try:
-        resp = requests.get(EFTS_URL, params=params, headers=UA, timeout=30)
-        return resp.json().get("hits", {}).get("hits", [])
-    except requests.RequestException:
-        return []
+
+    last_error = "unknown"
+    for attempt in range(SEARCH_RETRIES):
+        try:
+            resp = requests.get(EFTS_URL, params=params, headers=UA, timeout=30)
+        except requests.RequestException as exc:
+            last_error = f"request error: {exc}"
+        else:
+            if resp.status_code == 200:
+                try:
+                    return resp.json().get("hits", {}).get("hits", [])
+                except ValueError:  # JSONDecodeError: HTTP 200 but not JSON (throttle HTML)
+                    last_error = "HTTP 200 but response was not JSON (likely throttling)"
+            elif resp.status_code in _RETRYABLE_STATUS:
+                last_error = f"HTTP {resp.status_code}"
+            else:
+                raise RuntimeError(f"EDGAR search failed: HTTP {resp.status_code} for q={query!r}")
+        time.sleep(DELAY_SECONDS * 4 * (attempt + 1))  # linear backoff
+
+    raise RuntimeError(
+        f"EDGAR search failed after {SEARCH_RETRIES} attempts (q={query!r}, offset={offset}): "
+        f"{last_error}. Not treating this as 'no results', which would silently truncate "
+        "the manifest; fix connectivity / back off and rebuild."
+    )
 
 
 # "amendment" as a NOUN (a modifying document), tolerant of the misspellings and
@@ -93,13 +125,21 @@ def _names_a_modification(upper_desc: str, modifier_words: tuple[str, ...]) -> b
     return bool(_AMENDMENT_RE.search(upper_desc)) or any(w in upper_desc for w in modifier_words)
 
 
-def title_says(agreement: str) -> Callable[[str], bool]:
+def title_says(agreement: str, disallow: tuple[str, ...] = ()) -> Callable[[str], bool]:
     """Build a `description_ok` predicate that keeps only FULL agreements of a kind.
 
     EDGAR has no dedicated exhibit type for licence / employment / lease agreements
     (all are EX-10 material contracts), so we label by the filer's own exhibit title
     in `file_description`. We keep a document only if its title names the agreement
     (e.g. "EMPLOYMENT AGREEMENT") and is not a sub-document that modifies one.
+
+    The agreement name is matched as a SUBSTRING, which is deliberate for prefixes
+    that are still the same kind of document ("SUBLEASE AGREEMENT" is a lease,
+    "SUBLICENSE AGREEMENT" is a licence). But a substring also matches confusable
+    DIFFERENT documents ("RELEASE AGREEMENT" contains "LEASE AGREEMENT" yet is a
+    release of claims, not a lease). `disallow` names words whose presence (as whole
+    words) disqualifies the title despite the substring match, e.g. lease passes
+    `disallow=("RELEASE",)` to reject releases while still keeping subleases.
 
     Two independent guards catch modifying sub-documents:
       * the agreement named after "TO" ("AMENDMENT TO <A>", "EXTENSION TO <A>"),
@@ -116,11 +156,14 @@ def title_says(agreement: str) -> Callable[[str], bool]:
     """
     agreement = agreement.upper()
     modifies = re.compile(r"\bTO\s+(?:THE\s+)?" + re.escape(agreement))
+    disallowed = [re.compile(rf"\b{re.escape(w.upper())}\b") for w in disallow]
 
     def ok(description: str) -> bool:
         d = description.upper()
         if agreement not in d:
             return False
+        if any(bad.search(d) for bad in disallowed):
+            return False  # a confusable different document (e.g. RELEASE, not a lease)
         if modifies.search(d):
             return False
         return not _names_a_modification(d, _MODIFIER_WORDS)
@@ -244,6 +287,15 @@ def _gather_manifest(type_dir: Path, spec: _Search, queries: list[str]) -> list[
         if len(entries) >= spec.target:
             break
         _page_one_query(spec, query, entries, seen_company)
+
+    # Landing well under target can be genuine (the queries exhausted matching filings)
+    # OR a sign of dropped pages. We cannot tell the two apart here, so we surface it
+    # loudly rather than freeze a possibly-degraded manifest without a word. (`_search`
+    # already turns transient failures into hard errors; this catches quieter shortfalls.)
+    if len(entries) < 0.75 * spec.target:
+        print(f"WARNING: {type_dir.name} gathered {len(entries)} docs, well under target "
+              f"{spec.target}. Verify this is real exhaustion, not dropped search pages, "
+              "before trusting the frozen manifest.")
 
     type_dir.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(entries, indent=2))

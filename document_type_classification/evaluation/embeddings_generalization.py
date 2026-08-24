@@ -10,10 +10,10 @@ thing that changes is the representation, so any difference is the embeddings ta
     We train a full 9-class model whose ip examples come from ONE source (EDGAR), then
     test recall on ip from the OTHER source (CUAD), which the model never saw. This is
     exactly ip_source_transfer.py. TF-IDF's numbers to beat:
-        in-source recall (held-out EDGAR ip):        0.913   (the ceiling)
-        cross-source recall (unseen CUAD ip):        0.488   <-- the number that matters
-        control (CUAD ip 3-fold, trained on BOTH):   0.628   (how recognizable CUAD is)
-    The gap between 0.488 and 0.628 is the transfer gap TF-IDF pays for leaning on house
+        in-source recall (held-out EDGAR ip):        1.000   (the ceiling)
+        cross-source recall (unseen CUAD ip):        0.500   <-- the number that matters
+        control (CUAD ip 3-fold, trained on BOTH):   0.659   (how recognizable CUAD is)
+    The gap between 0.500 and 0.659 is the transfer gap TF-IDF pays for leaning on house
     style. If embeddings shrink that gap, semantics generalize better.
 
   Proxy 2 - OOS spot-check (anecdote, not statistic). Predict the 3 genuinely non-EDGAR
@@ -44,10 +44,13 @@ IP = "ip_agreement"
 SEED = 20260808            # identical to ip_source_transfer.py so the split matches
 HELDOUT_FRACTION = 0.2
 
-# TF-IDF baseline numbers, printed inline so the comparison is on-screen, not from memory.
-TFIDF_IN_SOURCE = 0.913
-TFIDF_CROSS_SOURCE = 0.488
-TFIDF_CONTROL = 0.628
+# TF-IDF baseline numbers, printed inline so the comparison is on-screen. These are a
+# RECORDED SNAPSHOT from ip_source_transfer.py on the 2188-doc leak-free dataset
+# (2026-08-24); they DRIFT whenever the dataset is rebuilt (class counts change), so
+# treat them as a reference, not a live truth, and re-run ip_source_transfer.py to refresh.
+TFIDF_IN_SOURCE = 1.000
+TFIDF_CROSS_SOURCE = 0.500
+TFIDF_CONTROL = 0.659
 
 
 def _rows(name: str) -> list[dict]:

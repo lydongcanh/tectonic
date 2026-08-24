@@ -139,16 +139,18 @@ def embed_texts(texts: list[str], model_name: str = MODEL_NAME) -> np.ndarray:
 
 def embed_rows_cached(rows: list[dict], cache_key: str,
                       model_name: str = MODEL_NAME) -> np.ndarray:
-    """Embed rows, caching per (split, encoder) so we pay the encoder cost only once.
+    """Embed rows, caching per (split, encoder, chunking) so we pay the cost only once.
 
-    The cache stores the vectors alongside the doc_ids they were built from. If the
-    saved doc_ids match the current rows exactly (same set, same order), we trust the
-    cache; any mismatch (data rebuilt, rows reordered) recomputes, so a stale cache can
-    never silently feed wrong vectors into a result. The encoder name is part of the
-    filename so different encoders never collide in the cache.
+    The cache stores the vectors alongside the doc_ids they were built from, and the
+    filename carries the encoder name AND the chunking parameters (words/chunk, cap).
+    A doc_id mismatch (data rebuilt, rows reordered) recomputes; and because the
+    chunking is in the KEY, changing WORDS_PER_CHUNK / CHUNK_CAP writes to a different
+    file rather than silently returning vectors built under the old chunking. (An
+    earlier version keyed only on split+encoder and claimed a stale cache "can never
+    silently feed wrong vectors", which was false precisely for a chunking change.)
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = CACHE_DIR / f"{cache_key}.{_safe_name(model_name)}.npz"
+    path = CACHE_DIR / f"{cache_key}.{_safe_name(model_name)}.w{WORDS_PER_CHUNK}.c{CHUNK_CAP}.npz"
     ids = [r["doc_id"] for r in rows]
 
     if path.exists():
@@ -191,7 +193,8 @@ def main() -> None:
 
     macro = float(f1_score(y_test, preds, labels=labels, average="macro"))
     print(f"\n===== embeddings probe ({MODEL_NAME}) =====")
-    print(f"in-distribution macro-F1: {macro:.3f}   (baseline TF-IDF was 0.968)")
+    print(f"in-distribution macro-F1: {macro:.3f}   (TF-IDF baseline ~0.977 as of "
+          "2026-08-24; run baseline.py for the current number)")
     print(classification_report(y_test, preds, labels=labels, digits=3))
     print("NOTE: in-distribution parity is expected and is NOT the question. The real")
     print("test is generalization (ip cross-source, OOS), measured next in step 2b.")

@@ -36,9 +36,12 @@ from sklearn.metrics import f1_score
 from embeddings_probe import embed_rows_cached, _classifier
 from embeddings_generalization import HELDOUT_FRACTION, IP, _rows, _split
 
-# TF-IDF baseline, carried inline as the reference row of the final table.
-TFIDF = {"in_dist": 0.968, "x_source": 0.488, "in_source": 0.913,
-         "control": 0.628, "oos_correct": 3, "oos_total": 3, "oos_conf": 0.48}
+# TF-IDF baseline, carried inline as the reference row of the final table. RECORDED
+# SNAPSHOT from baseline.py (in_dist) + ip_source_transfer.py (transfer) on the 2188-doc
+# leak-free dataset (2026-08-24). These DRIFT on any dataset rebuild; re-run those scripts
+# to refresh rather than trusting the numbers here as live.
+TFIDF = {"in_dist": 0.977, "x_source": 0.500, "in_source": 1.000,
+         "control": 0.659, "oos_correct": 3, "oos_total": 3, "oos_conf": 0.48}
 
 ENCODERS = [
     "all-mpnet-base-v2",

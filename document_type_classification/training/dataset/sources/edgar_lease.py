@@ -8,12 +8,17 @@ misspelling the scout found ("FIFTH AMENDEMNT TO LEASE AGREEMENT"), which the
 preposition rule catches where a keyword check would not.
 
 Design note: we require the title "LEASE AGREEMENT" and do NOT try to also catch
-bare "LEASE" / "OFFICE LEASE" titles. Two reasons: "LEASE" is a substring of
-"RELEASE"/"SUBLEASE" (a false-match trap), and the title is only our LABEL, not a
-feature. The model learns from the body, and an office lease's body (lessor,
-lessee, premises, rent, term) is the same as a lease agreement's, so the gate stays
-clean without hurting how well the class generalises. A few translated foreign
-leases ("... TRANSLATION OF LEASE AGREEMENT") are dropped conservatively.
+bare "LEASE" / "OFFICE LEASE" titles, because the title is only our LABEL, not a
+feature: the model learns from the body (lessor, lessee, premises, rent, term), so a
+narrower title gate does not hurt how well the class generalises.
+
+The title is matched as a substring, so "SUBLEASE AGREEMENT" is kept, correctly, a
+sublease IS a lease. But that substring also matches "RELEASE AGREEMENT" (a release
+of claims, not a lease), so we pass `disallow=("RELEASE",)` to reject those while
+keeping subleases. (An earlier version of this note wrongly claimed requiring the
+two-word phrase avoided the "RELEASE"/"SUBLEASE" trap; it does not, "LEASE AGREEMENT"
+is itself a substring of both.) A few translated foreign leases
+("... TRANSLATION OF LEASE AGREEMENT") are dropped conservatively.
 
 Sourcing, caching (data/raw/edgar/lease_agreement/), and the min-length / junk-page
 guards are all handled by the shared EDGAR helper.
@@ -34,6 +39,6 @@ MAX_OFFSET = 3000  # page deep enough to still reach TARGET after dropping amend
 def load_edgar_lease() -> Iterator[Example]:
     """Yield one Example per distinct-company full lease agreement (EX-10)."""
     return load_edgar_exhibits(
-        "lease_agreement", "EX-10", QUERIES, TARGET,
-        max_offset=MAX_OFFSET, description_ok=title_says("lease agreement"),
+        "lease_agreement", "EX-10", QUERIES, TARGET, max_offset=MAX_OFFSET,
+        description_ok=title_says("lease agreement", disallow=("RELEASE",)),
     )

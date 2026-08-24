@@ -1,9 +1,12 @@
 """Build (and validate) the production document-type model + its Hugging Face bundle.
 
 The production model is multilingual: a logistic-regression head on frozen BAAI/bge-m3
-embeddings (100+ languages incl. Vietnamese, 8192-token context). It replaces the earlier
-English-only mpnet model, it scores higher even on English (macro-F1 0.957 vs 0.940) and
-adds cross-lingual support. Run this only when the model changes:
+embeddings (100+ languages, 8192-token context). It replaces the earlier English-only mpnet
+model and adds cross-lingual support. It also scored higher on English (0.957 vs mpnet's
+0.940), but treat that as suggestive, not proof of a better encoder: the two runs used
+DIFFERENT chunking (bge-m3 embeds 2000-word chunks, mpnet used 250-word chunks), so the gain
+is confounded with chunk size. Both numbers also predate the 2026-08-24 leak-free dataset
+rebuild, so re-embed before quoting them. Run this only when the model changes:
 
     poetry run python document_type_classification/hf_release/build_release.py
 
@@ -66,7 +69,10 @@ def _chunks(text: str) -> list[str]:
 
 def _embed_cached(rows: list[dict], split: str, encoder) -> np.ndarray:
     CACHE.mkdir(parents=True, exist_ok=True)
-    path = CACHE / f"{split}.{_safe(ENCODER)}.npz"
+    # Key on encoder AND chunking (words/chunk, cap): changing the chunking must write a
+    # new cache file, not silently reuse vectors pooled under the old chunking. The doc_id
+    # check below additionally recomputes when the split's documents change.
+    path = CACHE / f"{split}.{_safe(ENCODER)}.w{WORDS_PER_CHUNK}.c{CHUNK_CAP}.npz"
     ids = [r["doc_id"] for r in rows]
     if path.exists():
         z = np.load(path, allow_pickle=True)
