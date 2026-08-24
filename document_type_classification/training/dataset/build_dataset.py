@@ -4,12 +4,15 @@ Steps:
   1. pull Examples from every source loader,
   2. keep only the labels we currently model (dataset.LABELS),
   3. drop exact-duplicate documents (same normalised text),
-  4. drop near-duplicate documents (keep one representative per near-dup group),
-  5. write the result to data/ and print a summary.
+  4. write the result to data/ and print a summary.
 
-Step 4 exists because the split audit found near-identical NDA templates leaking
-across train and test. Removing near-dups here fixes it at the source and keeps
-the split logic simple.
+We drop only EXACT duplicates (byte-identical after normalising) here. Near-duplicates
+are deliberately KEPT: many are genuinely distinct documents that merely share a
+boilerplate template (different companies' Delaware charters, different indentures,
+model NDAs), and dropping them would throw away real, representative documents. The
+leakage risk they pose (a near-twin sitting on both sides of the split) is handled
+where it belongs, in split.py, which keeps each near-dup group entirely on one side.
+This is why the earlier "drop near-dups here" step was removed.
 """
 
 from __future__ import annotations
@@ -20,7 +23,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from dataset import LABELS, Example, write_jsonl
-from fingerprint import NEAR_DUP_THRESHOLD, sketch, similarity
 from sources.contract_nli import load_contract_nli
 from sources.cuad import load_cuad
 from sources.edgar_acquisition import load_edgar_acquisition
@@ -82,22 +84,6 @@ def _load_exact_deduped() -> tuple[list[Example], int]:
     return examples, exact_dropped
 
 
-def _drop_near_duplicates(examples: list[Example]) -> tuple[list[Example], int]:
-    """Greedily keep a document only if it is not a near-duplicate of one already
-    kept. The first occurrence wins and stands in for its near-dup group."""
-    kept: list[Example] = []
-    kept_sketches: list[frozenset[int]] = []
-    near_dropped = 0
-    for ex in examples:
-        sk = sketch(ex.text)
-        if any(similarity(sk, other) >= NEAR_DUP_THRESHOLD for other in kept_sketches):
-            near_dropped += 1
-            continue
-        kept.append(ex)
-        kept_sketches.append(sk)
-    return kept, near_dropped
-
-
 MIN_PER_LABEL = 10  # a class below this almost certainly means a source failed
 
 
@@ -119,10 +105,10 @@ def _require_all_labels(examples: list[Example]) -> None:
 
 def build() -> list[Example]:
     examples, exact_dropped = _load_exact_deduped()
-    kept, near_dropped = _drop_near_duplicates(examples)
-    print(f"dropped {exact_dropped} exact + {near_dropped} near duplicates")
-    _require_all_labels(kept)
-    return kept
+    print(f"dropped {exact_dropped} exact duplicates; near-duplicates kept "
+          "(split.py keeps each near-dup group on one side)")
+    _require_all_labels(examples)
+    return examples
 
 
 def main() -> None:

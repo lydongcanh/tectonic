@@ -110,15 +110,19 @@ All nine v1 classes are built (`commercial_agreement`, `nda`, `constitutional`,
   zero-shot through the shared multilingual space). Built and bundled by
   `../hf_release/build_release.py`; heavier (~2.2GB) but a better representation.
 
-Why embeddings, not the *higher* in-distribution TF-IDF? In-distribution is the metric we
-trust least: every class comes from essentially one origin (EDGAR / EDGAR-derived), so a
-bag-of-words model can win by keying on corpus house style rather than meaning. The
-`evaluation/` probes tested generalisation across sources, which is what matters for
-deployment, and embeddings won clearly (ip cross-source recall **0.63 vs 0.49**; out-of-source
-documents far more confident). The path there ran through an English mpnet model and an
-encoder bake-off (mpnet vs bge-large vs frozen LegalBERT); bge-m3 was then adopted for
-multilingual and turned out to beat mpnet on English too. That full story lives in
-`evaluation/` and git history.
+Why ship bge-m3 when TF-IDF scores *higher* in-distribution? Be careful here, because the
+English numbers alone do **not** make the case. Measured honestly, TF-IDF matches or beats
+bge-m3 on every English metric we have: in-distribution macro-F1 **0.968 vs 0.957**, and ip
+cross-source recall **0.488 vs 0.465** (a one-document difference on 43 docs, i.e. a tie).
+The generalisation win that first justified moving to embeddings (ip cross-source **0.63 vs
+0.49**) was **mpnet's**, measured in the encoder bake-off; it does **not** carry over to
+bge-m3, which was adopted later for multilingual support and never beat TF-IDF cross-source.
+
+So the honest reason to ship bge-m3 is **multilingual capability** (TF-IDF cannot handle
+other languages at all) plus a semantic representation as a hedge for non-EDGAR text, **not**
+an English accuracy or generalisation gain. On English-only, monolingual deployments TF-IDF
+remains a strong, cheaper choice. The full TF-IDF → mpnet → bge-m3 decision path, including
+the bake-off numbers, lives in `evaluation/` and git history.
 
 Honest caveat that still stands: in-distribution scores flatter the model; generalisation to
 non-EDGAR, non-US, or non-English documents is only lightly tested. And every encoder misses
