@@ -1,18 +1,18 @@
 {
   "encoder": "BAAI/bge-m3",
   "in_distribution_english": {
-    "macro_f1": 0.957,
+    "macro_f1": 0.97,
     "per_class_f1": {
-      "acquisition_agreement": 0.918,
-      "commercial_agreement": 0.908,
+      "acquisition_agreement": 1.0,
+      "commercial_agreement": 0.914,
       "constitutional": 1.0,
-      "employment_agreement": 0.979,
-      "financial_statements": 0.983,
-      "financing_agreement": 0.98,
-      "ip_agreement": 0.892,
+      "employment_agreement": 1.0,
+      "financial_statements": 1.0,
+      "financing_agreement": 0.983,
+      "ip_agreement": 0.875,
       "lease_agreement": 0.98,
       "nda": 0.975
     },
-    "n_test": 426
+    "n_test": 439
   }
 }

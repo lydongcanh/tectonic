@@ -10,3 +10,6 @@ artifacts/
 
 # OS
 .DS_Store
+
+# Demo
+/.gradio/

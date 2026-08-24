@@ -49,7 +49,7 @@ demo = gr.Interface(
     inputs=gr.Textbox(lines=14, label="Document text",
                       placeholder="Paste a legal or deal document here..."),
     outputs=gr.Label(num_top_classes=9, label="Predicted document type"),
-    title="Tectonic — Document Type Classifier",
+    title="Document Type Classifier",
     description=("Classifies an English legal / deal document into one of nine types. "
                  "Confidence is not calibrated, so treat borderline scores with care. "
                  "Trained on public filings (EDGAR / CUAD / ContractNLI)."),

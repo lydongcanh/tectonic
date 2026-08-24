@@ -106,21 +106,19 @@ All nine v1 classes are built (`commercial_agreement`, `nda`, `constitutional`,
 - **Baseline (TF-IDF + LogReg):** macro-F1 ≈ **0.977** in-distribution on the current
   leak-free split (was 0.968 before the 2026-08-24 near-dup rebuild). Kept as the reference
   bar and glass-box interpretability tool.
-- **PRODUCTION: multilingual (bge-m3 + LogReg):** English held-out macro-F1 ≈ **0.957**,
-  and multilingual (100+ languages, 8192-token context; other languages work zero-shot
-  through the shared multilingual space, a capability, not a measured result). Built and
-  bundled by `../hf_release/build_release.py`; heavier (~2.2GB) but a better representation.
-  **Its 0.957 was measured on the OLD split**; the model has not yet been re-embedded on the
-  leak-free rebuild, so it is not directly comparable to the baseline's 0.977 until it is.
+- **PRODUCTION: multilingual (bge-m3 + LogReg):** English held-out macro-F1 ≈ **0.970** on
+  the same leak-free split as the baseline, and multilingual (100+ languages, 8192-token
+  context; other languages work zero-shot through the shared multilingual space, a capability,
+  not a measured result). Built and bundled by `../hf_release/build_release.py`; heavier
+  (~2.2GB) but a better representation.
 
 Why ship bge-m3 when TF-IDF scores *higher* in-distribution? Be careful here, because the
-English numbers alone do **not** make the case. On the metrics we have (bge-m3's on the older
-split, so read as indicative), TF-IDF matches or beats it on every English measure: in-dist
-macro-F1 (**0.977** TF-IDF vs **0.957** bge-m3, different splits) and ip cross-source recall
-(**0.488 vs 0.465**, a one-document difference, i.e. a tie). The generalisation win that first
-justified moving to embeddings (ip cross-source **0.63 vs 0.49**) was **mpnet's**, measured in
-the encoder bake-off; it does **not** carry over to bge-m3, which was adopted later for
-multilingual support and never beat TF-IDF cross-source.
+English numbers alone do **not** make the case. On the same leak-free split, TF-IDF matches or
+beats it on every English measure: in-distribution macro-F1 (**0.977 vs 0.970**) and the ip
+cross-source proxy (a tie, both ≈0.5). The generalisation win that first justified moving to
+embeddings (ip cross-source **0.63 vs 0.49**) was **mpnet's**, measured in the encoder
+bake-off; it does **not** carry over to bge-m3, which was adopted later for multilingual
+support and never beat TF-IDF cross-source.
 
 So the honest reason to ship bge-m3 is **multilingual capability** (TF-IDF cannot handle
 other languages at all) plus a semantic representation as a hedge for non-EDGAR text, **not**

@@ -25,17 +25,17 @@ documents.
 
 ## Evaluation
 
-**Measured (English held-out test): macro-F1 0.957.** This is the only *labelled* test
+**Measured (English held-out test): macro-F1 0.970.** This is the only *labelled* test
 set that exists (all training data is English: EDGAR / CUAD / ContractNLI), so it is the only
 computed benchmark. Per-class F1:
 
-- `acquisition_agreement`: 0.918
-- `commercial_agreement`: 0.908
+- `acquisition_agreement`: 1.000
+- `commercial_agreement`: 0.914
 - `constitutional`: 1.000
-- `employment_agreement`: 0.979
-- `financial_statements`: 0.983
-- `financing_agreement`: 0.980
-- `ip_agreement`: 0.892
+- `employment_agreement`: 1.000
+- `financial_statements`: 1.000
+- `financing_agreement`: 0.983
+- `ip_agreement`: 0.875
 - `lease_agreement`: 0.980
 - `nda`: 0.975
 

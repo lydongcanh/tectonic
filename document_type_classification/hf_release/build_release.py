@@ -67,7 +67,47 @@ def _chunks(text: str) -> list[str]:
             for i in range(0, len(words), WORDS_PER_CHUNK)][:CHUNK_CAP]
 
 
-def _embed_cached(rows: list[dict], split: str, encoder) -> np.ndarray:
+_ENCODER = None  # loaded lazily, only if we actually have to embed (see _get_encoder)
+
+
+def _get_encoder():
+    global _ENCODER
+    if _ENCODER is None:
+        from sentence_transformers import SentenceTransformer
+
+        _ENCODER = SentenceTransformer(ENCODER)
+        _ENCODER.max_seq_length = MAX_SEQ
+        print(f"loaded {ENCODER} on device={_ENCODER.device}, max_seq_length={_ENCODER.max_seq_length}")
+    return _ENCODER
+
+
+def _pool(chunk_vecs: np.ndarray) -> np.ndarray:
+    """Mean-pool the first CHUNK_CAP chunk vectors, then L2-normalise (the production
+    document representation). Identical whether the chunks come from a fresh encode or
+    from the all-chunks cache, so the two paths produce the same vectors."""
+    pooled = chunk_vecs[:CHUNK_CAP].mean(axis=0)
+    n = np.linalg.norm(pooled)
+    return (pooled / n if n > 0 else pooled).astype(np.float32)
+
+
+def _from_allchunks(rows: list[dict]) -> np.ndarray | None:
+    """Reuse the all-chunks cache the pooling ablation built (every chunk of every doc,
+    same encoder + 2000-word chunking) by pooling the first CHUNK_CAP chunks, instead of
+    re-embedding. Returns None if that cache is absent or does not cover these docs, in
+    which case the caller falls back to embedding.
+    """
+    path = CACHE / f"allchunks.{_safe(ENCODER)}.w{WORDS_PER_CHUNK}.npz"
+    if not path.exists():
+        return None
+    z = np.load(path, allow_pickle=True)
+    by_id = dict(zip(z["doc_ids"], z["per_doc"]))
+    if any(r["doc_id"] not in by_id for r in rows):
+        return None
+    print(f"pooling first-{CHUNK_CAP} from {path.name} (no re-embed)")
+    return np.array([_pool(by_id[r["doc_id"]]) for r in rows], dtype=np.float32)
+
+
+def _embed_cached(rows: list[dict], split: str) -> np.ndarray:
     CACHE.mkdir(parents=True, exist_ok=True)
     # Key on encoder AND chunking (words/chunk, cap): changing the chunking must write a
     # new cache file, not silently reuse vectors pooled under the old chunking. The doc_id
@@ -79,18 +119,21 @@ def _embed_cached(rows: list[dict], split: str, encoder) -> np.ndarray:
         if list(z["doc_ids"]) == ids:
             print(f"cache hit: {path.name}")
             return z["vectors"]
-    per_doc = [_chunks(r["text"]) for r in rows]
-    flat = [c for doc in per_doc for c in doc]
-    print(f"embedding {len(rows)} docs -> {len(flat)} chunks with {ENCODER}")
-    vecs = encoder.encode(flat, batch_size=BATCH, show_progress_bar=True,
-                          convert_to_numpy=True, normalize_embeddings=False)
-    out = np.empty((len(rows), vecs.shape[1]), dtype=np.float32)
-    cur = 0
-    for i, doc in enumerate(per_doc):
-        pooled = vecs[cur:cur + len(doc)].mean(axis=0)
-        cur += len(doc)
-        n = np.linalg.norm(pooled)
-        out[i] = pooled / n if n > 0 else pooled
+
+    out = _from_allchunks(rows)
+    if out is None:
+        encoder = _get_encoder()
+        per_doc = [_chunks(r["text"]) for r in rows]
+        flat = [c for doc in per_doc for c in doc]
+        print(f"embedding {len(rows)} docs -> {len(flat)} chunks with {ENCODER}")
+        vecs = encoder.encode(flat, batch_size=BATCH, show_progress_bar=True,
+                              convert_to_numpy=True, normalize_embeddings=False)
+        out = np.empty((len(rows), vecs.shape[1]), dtype=np.float32)
+        cur = 0
+        for i, doc in enumerate(per_doc):
+            out[i] = _pool(vecs[cur:cur + len(doc)])
+            cur += len(doc)
+
     np.savez(path, vectors=out, doc_ids=np.array(ids, dtype=object))
     print(f"cached: {path.name}")
     return out
@@ -190,17 +233,13 @@ Built from CUAD (© The Atticus Project, CC BY 4.0), ContractNLI (CC BY 4.0), an
 
 
 def main() -> None:
-    from sentence_transformers import SentenceTransformer
-
     STAGE.mkdir(parents=True, exist_ok=True)
-    encoder = SentenceTransformer(ENCODER)
-    encoder.max_seq_length = MAX_SEQ
-    print(f"loaded {ENCODER} on device={encoder.device}, max_seq_length={encoder.max_seq_length}")
-
     train, test = _rows("train.jsonl"), _rows("test.jsonl")
     labels = sorted({r["type"] for r in train})
-    x_train = _embed_cached(train, "train", encoder)
-    x_test = _embed_cached(test, "test", encoder)
+    # Reuses the all-chunks cache when present (pools first-CHUNK_CAP, no re-embed) and
+    # only loads bge-m3 to embed if that cache is missing.
+    x_train = _embed_cached(train, "train")
+    x_test = _embed_cached(test, "test")
     y_train, y_test = [r["type"] for r in train], [r["type"] for r in test]
 
     clf = LogisticRegression(max_iter=1000, class_weight="balanced").fit(x_train, y_train)
