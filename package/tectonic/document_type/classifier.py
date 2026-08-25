@@ -37,7 +37,7 @@ class DocumentTypeClassifier:
     def from_pretrained(cls, model: str = DEFAULT_MODEL) -> "DocumentTypeClassifier":
         """Load from a Hugging Face repo id or a local directory.
 
-        A path that exists on disk is used directly; otherwise the two model files are
+        A path that exists on disk is used directly, otherwise the two model files are
         fetched from the Hub (and cached) by repo id. All preprocessing parameters come
         from the model's own config, so inference cannot drift from training.
         """
@@ -76,8 +76,8 @@ class DocumentTypeClassifier:
         return self.classify_batch([text])[0]
 
     def classify_batch(self, texts: list[str]) -> list[Prediction]:
-        """Classify many documents in a single embedding pass (much faster than one call
-        each when you have several)."""
+        """Classify many documents in a single embedding pass 
+        (much faster than one call each when you have several)."""
         x = embed_documents(self._get_encoder(), texts, self._words_per_chunk, self._chunk_cap)
         proba = self._head.predict_proba(x)
         classes = [DocumentType(c) for c in self._head.classes_]

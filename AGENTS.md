@@ -1,0 +1,6 @@
+- Always ask for clarification if you are unsure about a task or instruction.
+- Always implement the best solution to a problem, even if it takes more time or effort. 
+- Never settle for a workaround or a quick fix that doesn't address the root cause.
+- Explain what you are doing and why, like teaching someone else.
+- Use the latest version of any tools or libraries you are working with, unless there is a specific reason to use an older version.
+- Always use one class per file, unless there is a compelling reason to do otherwise.

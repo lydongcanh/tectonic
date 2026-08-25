@@ -1,6 +1,7 @@
 """Gradio demo for the tectonic document-type classifier.
 
-Paste a legal/deal document and see the predicted type with the full per-type confidence.
+Upload one or more documents (PDF, DOCX, or TXT) and see the predicted type for each, with
+its confidence. Text is extracted from each file locally, then classified in one batch.
 
 Run it:
     poetry install --all-extras --with demo
@@ -14,6 +15,7 @@ a local model bundle instead, set TECTONIC_MODEL to that directory, e.g.:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import gradio as gr
 
@@ -22,40 +24,84 @@ from tectonic.document_type import DocumentTypeClassifier
 MODEL = os.environ.get("TECTONIC_MODEL", "lydongcanh/tectonic-doctype")
 classifier = DocumentTypeClassifier.from_pretrained(MODEL)
 
-EXAMPLES = [
-    ["This Mutual Non-Disclosure Agreement is entered into by and between the parties to "
-     "protect confidential information disclosed in connection with evaluating a potential "
-     "business relationship. Each party agrees to hold the other's Confidential Information "
-     "in strict confidence and not to disclose it to any third party."],
-    ["This Lease Agreement is made between the Landlord and the Tenant for the premises "
-     "located at 100 Main Street. The Tenant shall pay monthly rent in advance, maintain "
-     "the leased premises, and surrender possession at the end of the term."],
-    ["This Employment Agreement sets forth the terms of the Executive's employment with the "
-     "Company, including base salary, annual bonus, benefits, vacation, and obligations upon "
-     "termination of employment."],
-]
+SUPPORTED = [".pdf", ".docx", ".txt", ".md"]
 
 
-def classify(text: str) -> dict[str, float]:
-    """Return {type: confidence} for gr.Label to render as a ranked bar chart."""
-    if not text or not text.strip():
-        return {}
-    prediction = classifier.classify(text)
-    return {str(label): score for label, score in prediction.scores.items()}
+def _extract_text(path: str) -> str:
+    """Pull plain text out of one uploaded file. Raises ValueError with a readable message
+    if the type is unsupported or no text could be extracted (e.g. a scanned-image PDF)."""
+    suffix = Path(path).suffix.lower()
+    if suffix == ".pdf":
+        from pypdf import PdfReader
+
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+    elif suffix == ".docx":
+        import docx
+
+        text = "\n".join(p.text for p in docx.Document(path).paragraphs)
+    elif suffix in (".txt", ".md"):
+        text = Path(path).read_text(errors="ignore")
+    else:
+        raise ValueError(f"unsupported file type '{suffix}' (use {', '.join(SUPPORTED)})")
+
+    if not text.strip():
+        raise ValueError("no extractable text (a scanned-image PDF needs OCR first)")
+    return text
 
 
-demo = gr.Interface(
-    fn=classify,
-    inputs=gr.Textbox(lines=14, label="Document text",
-                      placeholder="Paste a legal or deal document here..."),
-    outputs=gr.Label(num_top_classes=9, label="Predicted document type"),
-    title="Document Type Classifier",
-    description=("Classifies an English legal / deal document into one of nine types. "
-                 "Confidence is not calibrated, so treat borderline scores with care. "
-                 "Trained on public filings (EDGAR / CUAD / ContractNLI)."),
-    examples=EXAMPLES,
-    flagging_mode="never",
-)
+def classify_files(paths: list[str] | None) -> list[list[str]]:
+    """Extract + classify each uploaded file; return rows for the results table.
+
+    Files that parse are classified together in one batch (faster); files that fail
+    extraction get a row explaining why, so one bad file never hides the good results.
+    """
+    if not paths:
+        return []
+
+    names, texts, rows = [], [], []
+    for path in paths:
+        name = Path(path).name
+        try:
+            texts.append(_extract_text(path))
+            names.append(name)
+        except Exception as exc:  # any parse error becomes a table row, never a crash
+            rows.append([name, "—", "—", f"could not read: {exc}"])
+
+    for name, prediction in zip(names, classifier.classify_batch(texts)):
+        ranked = sorted(prediction.scores.items(), key=lambda kv: kv[1], reverse=True)
+        top_label, top_score = ranked[0]
+        runner_label, runner_score = ranked[1]
+        rows.append([
+            name,
+            str(top_label),
+            f"{top_score:.0%}",
+            f"{runner_label} ({runner_score:.0%})",
+        ])
+    return rows
+
+
+with gr.Blocks(title="Document Type Classifier") as demo:
+    gr.Markdown(
+        "# Document Type Classifier\n"
+        "Upload one or more legal / deal documents (**PDF, DOCX, TXT**) to classify each into "
+        "one of nine types. Text is extracted locally, then classified. Confidence is not "
+        "calibrated, so treat borderline scores with care. Trained on public filings "
+        "(EDGAR / CUAD / ContractNLI)."
+    )
+    files = gr.Files(
+        file_count="multiple",
+        file_types=SUPPORTED,
+        label="Documents (PDF, DOCX, TXT)",
+    )
+    run = gr.Button("Classify", variant="primary")
+    results = gr.Dataframe(
+        headers=["File", "Predicted type", "Confidence", "Runner-up"],
+        datatype=["str", "str", "str", "str"],
+        label="Results",
+        wrap=True,
+    )
+    run.click(classify_files, inputs=files, outputs=results)
+    files.change(classify_files, inputs=files, outputs=results)  # classify as soon as files land
 
 
 if __name__ == "__main__":

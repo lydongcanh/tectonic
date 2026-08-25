@@ -1,7 +1,8 @@
 # demo
 
-A small [Gradio](https://www.gradio.app/) web UI for the document-type classifier: paste a
-document, see the predicted type with the full per-type confidence as a ranked bar chart.
+A small [Gradio](https://www.gradio.app/) web UI for the document-type classifier: upload one
+or more documents (**PDF, DOCX, TXT**), and it extracts the text locally and shows the
+predicted type and confidence for each file in a results table.
 
 ## Run it
 
@@ -22,7 +23,12 @@ TECTONIC_MODEL=document_type_classification/hf_release/tectonic-doctype \
 
 ## Notes
 
-- The demo depends on `gradio` (the `demo` dependency group) and on the `document-type`
-  extra of the package. It is not part of the shipped `tectonic` package.
+- The demo depends on `gradio`, `pypdf`, and `python-docx` (the `demo` dependency group) and
+  on the `document-type` extra of the package. It is not part of the shipped `tectonic`
+  package.
+- Text extraction is best-effort: a scanned-image PDF (no embedded text) can't be read
+  without OCR, and unsupported file types are reported per-file in the table rather than
+  failing the whole batch.
 - This same `app.py` can be dropped into a Hugging Face Space to host the demo publicly:
-  add a `requirements.txt` with `tectonic[document-type]` and `gradio`.
+  add a `requirements.txt` with `tectonic[document-type]`, `gradio`, `pypdf`, and
+  `python-docx`.
